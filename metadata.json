@@ -1,0 +1,6 @@
+{
+  "name": "VFX Syntech",
+  "description": "High-performance visual synthesis engine dashboard for digital and analog signal processing with interactive parameters and real-time gold visualizers.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

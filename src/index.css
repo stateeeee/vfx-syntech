@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-gold-50: #fefcf3;
+  --color-gold-100: #fbf6d9;
+  --color-gold-200: #f4e9b0;
+  --color-gold-300: #ebd67d;
+  --color-gold-400: #e0bd4f;
+  --color-gold-500: #D4AF37;
+  --color-gold-600: #b8902b;
+  --color-gold-700: #8a6e2f;
+  --color-gold-800: #6b5124;
+  --color-gold-900: #513d1e;
+  --color-gold-950: #2c200e;
+}
+
+body {
+  background-color: #050505;
+  color: #ffffff;
+  font-family: var(--font-sans);
+}
+
+/* Custom glow animations for the gold theme using exact #D4AF37 (212, 175, 55) */
+@keyframes pulse-glow {
+  0%, 100% {
+    text-shadow: 0 0 4px rgba(212, 175, 55, 0.4), 0 0 12px rgba(212, 175, 55, 0.2);
+    box-shadow: 0 0 4px rgba(212, 175, 55, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 8px rgba(212, 175, 55, 0.8), 0 0 20px rgba(212, 175, 55, 0.4);
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.5);
+  }
+}
+
+.gold-glow-text {
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.6);
+}
+
+.gold-glow-border {
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.2);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c200e;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8a6e2f;
+}
+
