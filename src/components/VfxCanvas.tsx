@@ -78,7 +78,7 @@ export default function VfxCanvas({
           setMicActive(true);
           setMicPermissionDenied(false);
         } catch (err) {
-          console.error('Error accessing microphone:', err);
+          console.warn('Microphone access was dismissed or is not available. Safely falling back to procedural audio generator:', err);
           setMicActive(false);
           setMicPermissionDenied(true);
         }
@@ -168,12 +168,13 @@ export default function VfxCanvas({
       const cx = w / 2;
       const cy = h / 2;
 
-      // Define our 4 main Hubs (representing active modules in the network)
+      // Define our 5 main Hubs (representing active modules in the network)
       const hubsConfig: { id: ModuleId; label: string; angle: number; dist: number; color: string; glow: string }[] = [
-        { id: 'blob', label: 'BLOB STATE', angle: -Math.PI / 4 - 0.2, dist: 120, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'analog', label: 'ANALOG STATE', angle: Math.PI / 4 + 0.1, dist: 130, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'particle', label: 'PARTICLE HARMONICS', angle: Math.PI - 0.5, dist: 140, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'spectrum', label: 'SPECTRUM ANALYZER', angle: -Math.PI / 2 - 0.3, dist: 125, color: '#ffffff', glow: '#D4AF37' },
+        { id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120, color: '#ffffff', glow: '#D4AF37' },
+        { id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130, color: '#ffffff', glow: '#D4AF37' },
+        { id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140, color: '#ffffff', glow: '#D4AF37' },
+        { id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125, color: '#ffffff', glow: '#D4AF37' },
+        { id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110, color: '#ffffff', glow: '#D4AF37' },
       ];
 
       // Add central master core node representing the root index.md / Obsidian Vault main core
@@ -645,19 +646,7 @@ export default function VfxCanvas({
     >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
       
-      {/* HUD Info Labels */}
-      <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded border border-gold-900/60 bg-black/85 font-mono text-[9px] text-gold-400">
-        <span className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'bg-gold-500 animate-pulse' : 'bg-neutral-700'}`}></span>
-        <span>OBSIDIAN CONSTALLATION VAULT v2</span>
-      </div>
 
-      <div className="absolute top-3 right-3 flex items-center gap-2 font-mono text-[9px] text-gold-400/80 bg-black/85 px-2 py-0.5 rounded border border-gold-900/60">
-        <span>SIGNAL: {signalSource}</span>
-      </div>
-
-      <div className="absolute bottom-3 left-3 font-mono text-[8px] text-neutral-500 max-w-[240px] pointer-events-none uppercase">
-        Obsidian Graph Engine // Hover and click node clusters to switch channels dynamically
-      </div>
 
       {micPermissionDenied && signalSource === 'MIC_AUDIO_03' && (
         <div className="absolute inset-x-4 bottom-14 flex items-center gap-2 px-3 py-2 bg-red-950/80 border border-red-900/40 text-red-200 rounded font-mono text-xs">

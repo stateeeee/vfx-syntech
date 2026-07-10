@@ -1,4 +1,4 @@
-export type ModuleId = 'blob' | 'analog' | 'particle' | 'spectrum';
+export type ModuleId = 'blob_tracker' | 'analog' | 'blob_reveal' | 'bokeh' | 'anamorphic_lab';
 
 export interface ModuleConfig {
   id: ModuleId;
