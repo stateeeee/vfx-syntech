@@ -15,7 +15,7 @@ export const EFFECTS_REGISTRY: Record<ModuleId, EffectRegistryEntry> = {
   analog: { id: 'analog', iframeSrc: '/effects/analog/index.html' },
   blob_reveal: { id: 'blob_reveal', iframeSrc: '/effects/blob_reveal/index.html' },
   bokeh: { id: 'bokeh', iframeSrc: '/effects/bokeh/index.html' },
-  anamorphic_lab: { id: 'anamorphic_lab', iframeSrc: null },
+  anamorphic_lab: { id: 'anamorphic_lab', iframeSrc: '/effects/anamorphic_lab/index.html' },
 };
 
 export function hasRealEffect(id: ModuleId): boolean {
