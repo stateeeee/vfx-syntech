@@ -16,9 +16,12 @@ import {
   Volume2,
   SlidersHorizontal,
   Info,
-  Sparkles,
+  Sparkle,
   Send,
-  Bot
+  Bot,
+  Lightbulb,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { ModuleConfig, ModuleId, ActiveTab, SignalSource } from './types';
 import VfxCanvas from './components/VfxCanvas';
@@ -34,9 +37,10 @@ export default function App() {
   const [bufferSize, setBufferSize] = useState<number>(4896);
   const [globalSyncLocked, setGlobalSyncLocked] = useState(true);
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
+  const [isDayMode, setIsDayMode] = useState(false);
 
   // Gemini Intelligence custom states
-  const [activeGeminiMode, setActiveGeminiMode] = useState<'art_director' | 'agent' | 'optimizer'>('art_director');
+  const [activeGeminiMode, setActiveGeminiMode] = useState<'art_director' | 'agent' | 'optimizer' | null>(null);
   const [geminiPrompt, setGeminiPrompt] = useState('');
   const [hoveredMode, setHoveredMode] = useState<'art_director' | 'agent' | 'optimizer' | null>(null);
   const [geminiResponse, setGeminiResponse] = useState<string | null>(null);
@@ -73,6 +77,11 @@ export default function App() {
     if (isProcessingGemini) return;
     const promptToSend = geminiPrompt.trim();
     
+    if (!activeGeminiMode) {
+      setGeminiResponse("Please select a Gemini pathway (Art Director, Agent, or AI Optimizer) first.");
+      return;
+    }
+
     setIsProcessingGemini(true);
     setGeminiResponse(null);
     setSuggestedPreset(null);
@@ -151,8 +160,8 @@ export default function App() {
   };
 
   // Dynamic ticking metrics
-  const [frameCount, setFrameCount] = useState(88401234);
-  const [uptimeSeconds, setUptimeSeconds] = useState(15164); // 4h 12m 44s
+  const [frameCount, setFrameCount] = useState(0);
+  const [uptimeSeconds, setUptimeSeconds] = useState(0); // starts at zero as a real-time stopwatch
   const [simulatedLatency, setSimulatedLatency] = useState(1.2);
 
   // Modules setup with their reactive parameter configurations
@@ -303,56 +312,57 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-3 sm:p-6 md:p-8 font-sans">
+    <div className={`min-h-screen transition-colors duration-300 ${isDayMode ? 'bg-[#f5f2eb]' : 'bg-[#050505]'} flex items-center justify-center p-3 sm:p-6 md:p-8 font-sans`}>
       
       {/* Container simulating a premium Elegant Dark system terminal housing with thick dark metallic borders */}
       <div 
         id="vfx-syntech-terminal" 
-        className="w-full max-w-7xl bg-[#050505] text-white border-[12px] border-[#1a1a1a] shadow-2xl overflow-hidden flex flex-col"
+        className={`w-full max-w-7xl transition-colors duration-300 ${isDayMode ? 'bg-[#fcfbf9] text-neutral-900 border-[#eae6df]' : 'bg-[#050505] text-white border-[#1a1a1a]'} border-[12px] shadow-2xl overflow-hidden flex flex-col`}
       >
         
         {/* PREMIUM ELEGANT DARK HEADER / NAVIGATION */}
-        <nav className="flex flex-wrap justify-between items-center px-6 md:px-12 py-6 border-b border-gold-500/20 bg-black gap-4">
+        <nav className={`flex flex-wrap justify-between items-center px-6 md:px-12 py-6 border-b transition-colors duration-300 ${isDayMode ? 'border-gold-500/10 bg-[#f7f5f0]' : 'border-gold-500/20 bg-black'} gap-4`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 border-2 border-gold-500 rotate-45 flex items-center justify-center shrink-0">
               <span className="text-gold-500 font-bold -rotate-45 text-xs">VS</span>
             </div>
-            <span className="text-xl font-bold tracking-[0.2em] text-gold-500">
-              VFX <span className="text-white font-light">SYNTECH</span>
+            <span className={`text-xl font-bold tracking-[0.2em] ${isDayMode ? 'text-gold-700' : 'text-gold-500'}`}>
+              VFX <span className={`${isDayMode ? 'text-neutral-900' : 'text-white'} font-light`}>SYNTECH</span>
             </span>
           </div>
           
-          <ul className="hidden md:flex gap-8 lg:gap-10 text-[11px] uppercase tracking-[0.3em] font-medium text-gray-400">
+          <ul className={`hidden md:flex gap-8 lg:gap-10 text-[11px] uppercase tracking-[0.3em] font-medium transition-colors ${isDayMode ? 'text-neutral-500' : 'text-gray-400'}`}>
             <li className="text-gold-500 cursor-default">Home</li>
-            <li className="hover:text-white cursor-pointer transition-colors">Studio</li>
-            <li className="hover:text-white cursor-pointer transition-colors">Projects</li>
-            <li className="hover:text-white cursor-pointer transition-colors">Contact</li>
+            <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Save</li>
+            <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Projects</li>
+            <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Contact</li>
           </ul>
         </nav>
 
         {/* MAIN BODY GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-gold-500/10 flex-1 min-h-[500px]">
+        <div className={`grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x ${isDayMode ? 'divide-gold-500/15' : 'divide-gold-500/10'} flex-1 min-h-[500px]`}>
           
           {/* COLUMN 1: SIDEBAR CONTROLS & DYNAMIC PARAMS (Left Panel) */}
-          <section className="lg:col-span-4 p-6 md:p-8 flex flex-col justify-between space-y-6 bg-[#080808] overflow-hidden min-h-[480px]">
+          <section className={`lg:col-span-4 p-6 md:p-8 flex flex-col justify-between space-y-6 transition-colors duration-300 ${isDayMode ? 'bg-[#faf9f5]' : 'bg-[#080808]'} overflow-hidden min-h-[480px]`}>
             
             {/* Branding Display & Core Description */}
             <div className="space-y-4 shrink-0">
               <div className="space-y-1">
                 <h1 className="font-display font-black text-6xl tracking-tighter leading-none mb-2">
-                  VFX <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-500 to-gold-700">SYNTECH</span>
+                  <span className="block">VFX</span>
+                  <span className="block text-transparent bg-clip-text bg-gradient-to-r from-gold-500 to-gold-700">SYNTECH</span>
                 </h1>
               </div>
 
-              <p className="max-w-sm text-gray-400 leading-relaxed text-xs border-l-2 border-gold-500 pl-4 font-sans">
+              <p className={`max-w-sm ${isDayMode ? 'text-neutral-600' : 'text-gray-400'} leading-relaxed text-xs border-l-2 border-gold-500 pl-4 font-sans`}>
                 Software Ai based for professional effects audio and video reactive
               </p>
             </div>
 
             {/* GEMINI AI INTEGRATION SECTION - REMADE AS A STATIC COMPACT PANEL */}
-            <div className="border border-gold-500/20 bg-black/60 p-5 rounded-lg flex flex-col space-y-4 flex-1 justify-between overflow-hidden">
+            <div className={`border transition-all duration-300 ${isDayMode ? 'border-gold-500/30 bg-white shadow-sm' : 'border-gold-500/20 bg-black/60'} p-5 rounded-lg flex flex-col space-y-4 flex-1 justify-between overflow-hidden`}>
               <div className="flex items-center gap-2 border-b border-gold-500/10 pb-2 shrink-0">
-                <Sparkles className="w-4 h-4 text-gold-500 animate-pulse" />
+                <Sparkle className="w-5 h-5 text-gold-500 animate-pulse" />
                 <span className="text-[11px] font-mono font-extrabold tracking-[0.2em] text-gold-500 uppercase">
                   Gemini Ai
                 </span>
@@ -364,7 +374,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveGeminiMode('art_director');
+                    setActiveGeminiMode(activeGeminiMode === 'art_director' ? null : 'art_director');
                     setGeminiResponse(null);
                     setSuggestedPreset(null);
                   }}
@@ -373,11 +383,13 @@ export default function App() {
                   className={`w-full flex items-center justify-between gap-2 font-mono text-[10px] px-3.5 py-3 rounded border transition-all duration-200 cursor-pointer ${
                     activeGeminiMode === 'art_director'
                       ? 'bg-gold-500/15 border-gold-500 text-gold-500 font-bold shadow-[0_0_12px_rgba(212,175,55,0.15)]'
-                      : 'bg-[#0c0c0c] border-white/5 text-neutral-400 hover:text-white hover:border-gold-500/20'
+                      : isDayMode 
+                        ? 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:border-gold-500/30'
+                        : 'bg-[#0c0c0c] border-white/5 text-neutral-400 hover:text-white hover:border-gold-500/20'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Activity className={`w-3.5 h-3.5 ${activeGeminiMode === 'art_director' ? 'text-gold-500' : 'text-neutral-500'}`} />
+                    <Lightbulb className={`w-3.5 h-3.5 ${activeGeminiMode === 'art_director' ? 'text-gold-500' : 'text-neutral-500'}`} />
                     <span className="tracking-wider uppercase font-bold">ART DIRECTOR</span>
                   </div>
                   {activeGeminiMode === 'art_director' && (
@@ -389,7 +401,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveGeminiMode('agent');
+                    setActiveGeminiMode(activeGeminiMode === 'agent' ? null : 'agent');
                     setGeminiResponse(null);
                     setSuggestedPreset(null);
                   }}
@@ -398,7 +410,9 @@ export default function App() {
                   className={`w-full flex items-center justify-between gap-2 font-mono text-[10px] px-3.5 py-3 rounded border transition-all duration-200 cursor-pointer ${
                     activeGeminiMode === 'agent'
                       ? 'bg-gold-500/15 border-gold-500 text-gold-500 font-bold shadow-[0_0_12px_rgba(212,175,55,0.15)]'
-                      : 'bg-[#0c0c0c] border-white/5 text-neutral-400 hover:text-white hover:border-gold-500/20'
+                      : isDayMode 
+                        ? 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:border-gold-500/30'
+                        : 'bg-[#0c0c0c] border-white/5 text-neutral-400 hover:text-white hover:border-gold-500/20'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -414,7 +428,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveGeminiMode('optimizer');
+                    setActiveGeminiMode(activeGeminiMode === 'optimizer' ? null : 'optimizer');
                     setGeminiResponse(null);
                     setSuggestedPreset(null);
                   }}
@@ -423,7 +437,9 @@ export default function App() {
                   className={`w-full flex items-center justify-between gap-2 font-mono text-[10px] px-3.5 py-3 rounded border transition-all duration-200 cursor-pointer ${
                     activeGeminiMode === 'optimizer'
                       ? 'bg-gold-500/15 border-gold-500 text-gold-500 font-bold shadow-[0_0_12px_rgba(212,175,55,0.15)]'
-                      : 'bg-[#0c0c0c] border-white/5 text-neutral-400 hover:text-white hover:border-gold-500/20'
+                      : isDayMode 
+                        ? 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:border-gold-500/30'
+                        : 'bg-[#0c0c0c] border-white/5 text-neutral-400 hover:text-white hover:border-gold-500/20'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -437,24 +453,26 @@ export default function App() {
               </div>
 
               {/* REAL-TIME DYNAMIC DESCRIPTION BOX FOR HOVER STATE */}
-              <div className="bg-[#050505] p-2.5 rounded border border-white/5 font-mono text-[9px] text-neutral-400 leading-relaxed shrink-0">
+              <div className={`transition-colors duration-300 ${isDayMode ? 'bg-neutral-50 border-neutral-200 text-neutral-600' : 'bg-[#050505] border-white/5 text-neutral-400'} p-2.5 rounded border font-mono text-[9px] leading-relaxed shrink-0`}>
                 <span className="text-gold-500/50 font-bold block uppercase text-[8px] mb-0.5 tracking-wider">
                   // {hoveredMode ? 'SYSTEM HOVER BRIEF:' : 'SYSTEM STATUS:'}
                 </span>
-                <span className="text-neutral-300">
+                <span className={isDayMode ? 'text-neutral-800' : 'text-neutral-300'}>
                   {hoveredMode 
                     ? (hoveredMode === 'art_director' 
                         ? "Generates artistic critiques and real-time aesthetic analysis for the current VFX canvas composition."
                         : hoveredMode === 'agent'
                         ? "An intelligent conversational assistant to explore visual signals and apply custom parameters."
                         : "Instantly recalibrates VFX nodes and parameters for optimal visual density and harmony.")
-                    : `Active Gemini Pathway: ${activeGeminiMode.toUpperCase().replace('_', ' ')}. Enter your instructions below.`}
+                    : activeGeminiMode 
+                      ? `Active Gemini Pathway: ${activeGeminiMode.toUpperCase().replace('_', ' ')}. Enter your instructions below.`
+                      : "No active pathway. Select a pathway above to begin."}
                 </span>
               </div>
 
               {/* INTEGRATED MINI-CONSOLE FOR OUTPUT */}
               {(geminiResponse || isProcessingGemini) && (
-                <div className="bg-black/90 border border-gold-500/15 p-3 rounded font-mono text-[9px] text-neutral-300 leading-relaxed max-h-[110px] overflow-y-auto scrollbar-thin flex-1 min-h-[50px] shadow-inner">
+                <div className={`transition-colors duration-300 ${isDayMode ? 'bg-neutral-50 border-gold-500/30 text-neutral-800' : 'bg-black/90 border-gold-500/15 text-neutral-300'} p-3 rounded font-mono text-[9px] leading-relaxed max-h-[110px] overflow-y-auto scrollbar-thin flex-1 min-h-[50px] shadow-inner`}>
                   {isProcessingGemini ? (
                     <div className="flex items-center gap-2 text-gold-500/80 animate-pulse">
                       <RefreshCw className="w-3 h-3 animate-spin text-gold-500" />
@@ -473,7 +491,7 @@ export default function App() {
                           </button>
                         )}
                       </div>
-                      <div className="text-neutral-300 italic whitespace-pre-line">
+                      <div className={`transition-colors duration-300 ${isDayMode ? 'text-neutral-900' : 'text-neutral-300'} italic whitespace-pre-line`}>
                         "{geminiResponse}"
                       </div>
 
@@ -510,9 +528,11 @@ export default function App() {
                         ? "Guide the Art Director critique..."
                         : activeGeminiMode === 'agent'
                         ? "Ask Gemini Agent a custom question..."
-                        : "Optimize settings (e.g., retro look)..."
+                        : activeGeminiMode === 'optimizer'
+                        ? "Optimize settings (e.g., retro look)..."
+                        : "Select a pathway (Art Director, Agent, Optimizer)..."
                     }
-                    className="flex-1 bg-neutral-950 border border-gold-500/25 px-3 py-2 rounded font-mono text-[11px] text-white focus:outline-none focus:border-gold-500/60 placeholder-neutral-700"
+                    className={`flex-1 transition-colors duration-300 ${isDayMode ? 'bg-white border-gold-500/40 text-neutral-900 placeholder-neutral-400' : 'bg-neutral-950 border-gold-500/25 text-white placeholder-neutral-700'} px-3 py-2 rounded font-mono text-[11px] focus:outline-none focus:border-gold-500/60`}
                   />
                   <button
                     type="submit"
@@ -528,21 +548,22 @@ export default function App() {
           </section>
 
           {/* COLUMN 2: THE MAIN GRAPHIC STAGE (Center Panel) */}
-          <section className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-[#030303]">
+          <section className={`lg:col-span-5 p-6 md:p-8 flex flex-col justify-between transition-colors duration-300 ${isDayMode ? 'bg-[#faf9f5]' : 'bg-[#030303]'}`}>
             {/* Interactive Vfx Canvas Component */}
-            <div className="flex-1 min-h-[350px] lg:min-h-0 relative rounded border border-gold-500/25 bg-black overflow-hidden flex flex-col">
+            <div className={`flex-1 min-h-[350px] lg:min-h-0 relative rounded border transition-colors duration-300 ${isDayMode ? 'border-gold-500/30 bg-[#fbfaf7]' : 'border-gold-500/25 bg-black'} overflow-hidden flex flex-col`}>
               <VfxCanvas
                 activeModule={activeModule}
                 setActiveModule={setActiveModule}
                 modules={modules}
                 signalSource={signalSource}
                 isStreaming={isStreaming}
+                isDayMode={isDayMode}
               />
             </div>
           </section>
 
           {/* COLUMN 3: EFFECTS LIBRARY & SELECTION (Right Panel) */}
-          <section className="lg:col-span-3 pt-12 pb-24 px-8 md:px-10 lg:px-12 flex flex-col space-y-6 bg-[#080808] overflow-y-auto max-h-[calc(100vh-140px)] scrollbar-thin">
+          <section className={`lg:col-span-3 pt-12 pb-24 px-8 md:px-10 lg:px-12 flex flex-col space-y-6 transition-colors duration-300 ${isDayMode ? 'bg-[#faf9f5]' : 'bg-[#080808]'} overflow-y-auto max-h-[calc(100vh-140px)] scrollbar-thin`}>
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-gold-500/20 pb-2">
                 <div className="flex items-center gap-1.5 font-mono text-xs text-gold-500 font-bold uppercase tracking-wider">
@@ -564,8 +585,12 @@ export default function App() {
                       onClick={() => setActiveModule(m.id)}
                       className={`p-4 border-t-2 rounded-b text-left transition-all duration-200 cursor-pointer ${
                         isActive
-                          ? 'bg-[#111] border-gold-500 shadow-[0_4px_12px_rgba(212,175,55,0.12)]'
-                          : 'bg-black/60 border-t-transparent border-x border-b border-gold-500/10 hover:border-gold-500/30 hover:bg-[#111]/30'
+                          ? isDayMode
+                            ? 'bg-white border-gold-600 shadow-[0_4px_12px_rgba(180,140,45,0.08)] text-neutral-900'
+                            : 'bg-[#111] border-gold-500 shadow-[0_4px_12px_rgba(212,175,55,0.12)] text-white'
+                          : isDayMode
+                            ? 'bg-white/80 border-t-transparent border-x border-b border-gold-500/20 hover:border-gold-500/40 hover:bg-white text-neutral-700'
+                            : 'bg-black/60 border-t-transparent border-x border-b border-gold-500/10 hover:border-gold-500/30 hover:bg-[#111]/30 text-white'
                       }`}
                     >
                       <div className="flex items-center justify-between text-[10px] font-mono mb-2">
@@ -577,18 +602,20 @@ export default function App() {
                           className={`px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wide transition-colors ${
                             m.status === 'ACTIVE'
                               ? 'bg-gold-500 text-black font-extrabold shadow-[0_0_5px_rgba(212,175,55,0.3)]'
-                              : 'bg-neutral-900 text-gold-500 border border-gold-500/20'
+                              : isDayMode
+                                ? 'bg-neutral-100 text-gold-700 border border-gold-500/35 font-bold'
+                                : 'bg-neutral-900 text-gold-500 border border-gold-500/20'
                           }`}
                         >
                           {m.status}
                         </button>
                       </div>
 
-                      <h3 className={`text-sm font-bold uppercase ${isActive ? 'text-white' : 'text-neutral-400'}`}>
+                      <h3 className={`text-sm font-bold uppercase ${isActive ? (isDayMode ? 'text-neutral-900 font-extrabold' : 'text-white') : (isDayMode ? 'text-neutral-600' : 'text-neutral-400')}`}>
                         {m.name}
                       </h3>
                       
-                      <p className="text-[10px] text-neutral-400 line-clamp-3 leading-relaxed font-mono mt-1">
+                      <p className={`text-[10px] ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'} line-clamp-3 leading-relaxed font-mono mt-1`}>
                         {m.description}
                       </p>
                     </div>
@@ -601,26 +628,46 @@ export default function App() {
         </div>
 
         {/* SYSTEM STATUS FOOTER */}
-        <footer className="border-t border-white/5 bg-[#0a0a0a] px-6 md:px-12 py-6 flex flex-wrap justify-between items-center text-[10px] font-mono text-gray-400 gap-4">
+        <footer className={`border-t transition-colors duration-300 ${isDayMode ? 'border-gold-500/10 bg-[#eae5db] text-neutral-800' : 'border-white/5 bg-[#0a0a0a] text-gray-400'} px-6 md:px-12 py-6 flex flex-wrap justify-between items-center text-[10px] font-mono gap-4`}>
           
           <div className="flex gap-8 items-center flex-wrap">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_#22c55e] ${isStreaming ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-neutral-600'}`}></div>
-              <span className="text-[10px] uppercase tracking-widest text-gray-400">
-                SYSTEM: {isStreaming ? 'STREAMING' : 'STANDBY'}
+              <span className={`text-[10px] uppercase tracking-widest ${isDayMode ? 'text-neutral-700' : 'text-gray-400'}`}>
+                SYSTEM: {isStreaming ? 'LIVE STREAMING' : 'STANDBY'}
               </span>
             </div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">v4.2.8-STABLE</div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">
-              FRAMES: <span className="text-gold-500 font-bold">{formatFrames(frameCount)}</span>
-            </div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">
+            <div className={`text-[10px] uppercase tracking-widest flex items-center gap-2 ${isDayMode ? 'text-neutral-700' : 'text-gray-500'}`}>
               UPTIME: <span className="text-gold-500 font-bold">{formatUptime(uptimeSeconds)}</span>
+              
+              <button
+                type="button"
+                onClick={() => setIsDayMode(!isDayMode)}
+                className="relative w-8 h-8 flex items-center justify-center hover:opacity-80 transition-opacity ml-2 focus:outline-none cursor-pointer"
+                title={isDayMode ? "Passa a modalità notte" : "Passa a modalità giorno"}
+              >
+                {/* Sun icon */}
+                <Sun
+                  className={`w-4 h-4 transition-all duration-300 absolute ${
+                    isDayMode
+                      ? 'text-amber-500 z-10 scale-110 translate-x-0'
+                      : 'text-neutral-600 z-0 scale-90 translate-x-2.5 opacity-60'
+                  }`}
+                />
+                {/* Crescent Moon icon */}
+                <Moon
+                  className={`w-4 h-4 transition-all duration-300 absolute ${
+                    isDayMode
+                      ? 'text-neutral-400 z-0 scale-90 -translate-x-2.5 opacity-60'
+                      : 'text-gold-500 z-10 scale-110 translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 
           <div className="text-[10px] uppercase tracking-[0.2em] text-gold-500 font-semibold">
-            © 2026 VFX SYNTECH DIGITAL INDUSTRIES
+            CREATED BY STATE © 2026 VFX SYNTECH
           </div>
           
         </footer>
