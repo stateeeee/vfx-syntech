@@ -14,7 +14,7 @@ export const EFFECTS_REGISTRY: Record<ModuleId, EffectRegistryEntry> = {
   blob_tracker: { id: 'blob_tracker', iframeSrc: '/effects/blob_tracker/index.html' },
   analog: { id: 'analog', iframeSrc: '/effects/analog/index.html' },
   blob_reveal: { id: 'blob_reveal', iframeSrc: '/effects/blob_reveal/index.html' },
-  bokeh: { id: 'bokeh', iframeSrc: null },
+  bokeh: { id: 'bokeh', iframeSrc: '/effects/bokeh/index.html' },
   anamorphic_lab: { id: 'anamorphic_lab', iframeSrc: null },
 };
 
