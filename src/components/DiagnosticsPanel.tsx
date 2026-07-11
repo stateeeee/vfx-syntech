@@ -4,9 +4,10 @@ import { DiagnosticsState, SignalSource } from '../types';
 interface DiagnosticsPanelProps {
   signalSource: SignalSource;
   isStreaming: boolean;
+  isDayMode?: boolean;
 }
 
-export default function DiagnosticsPanel({ signalSource, isStreaming }: DiagnosticsPanelProps) {
+export default function DiagnosticsPanel({ signalSource, isStreaming, isDayMode = false }: DiagnosticsPanelProps) {
   const [diag, setDiag] = useState<DiagnosticsState>({
     cpuUsage: 14.5,
     memoryUsage: 312,
@@ -108,12 +109,12 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
     <div className="flex flex-col h-full space-y-4">
       {/* Dynamic Graph Meters */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="border border-gold-900/30 bg-neutral-950/40 p-2.5 rounded">
-          <div className="flex justify-between text-[10px] font-mono text-gold-500 mb-1">
+        <div className={`border rounded p-2.5 transition-colors duration-300 ${isDayMode ? 'border-gold-500/25 bg-white shadow-sm' : 'border-gold-900/30 bg-neutral-950/40'}`}>
+          <div className={`flex justify-between text-[10px] font-mono mb-1 ${isDayMode ? 'text-amber-800 font-bold' : 'text-gold-500'}`}>
             <span>CPU COMPILER LOAD</span>
             <span>{diag.cpuUsage.toFixed(1)}%</span>
           </div>
-          <div className="w-full bg-neutral-900 h-1.5 rounded-full overflow-hidden">
+          <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-neutral-900'}`}>
             <div 
               className="bg-gold-500 h-full transition-all duration-300"
               style={{ width: `${diag.cpuUsage}%` }}
@@ -121,12 +122,12 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
           </div>
         </div>
 
-        <div className="border border-gold-900/30 bg-neutral-950/40 p-2.5 rounded">
-          <div className="flex justify-between text-[10px] font-mono text-gold-500 mb-1">
+        <div className={`border rounded p-2.5 transition-colors duration-300 ${isDayMode ? 'border-gold-500/25 bg-white shadow-sm' : 'border-gold-900/30 bg-neutral-950/40'}`}>
+          <div className={`flex justify-between text-[10px] font-mono mb-1 ${isDayMode ? 'text-amber-800 font-bold' : 'text-gold-500'}`}>
             <span>GPU RASTER BUFFER</span>
             <span>{diag.gpuLoad.toFixed(1)}%</span>
           </div>
-          <div className="w-full bg-neutral-900 h-1.5 rounded-full overflow-hidden">
+          <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-neutral-900'}`}>
             <div 
               className="bg-gold-400 h-full transition-all duration-300"
               style={{ width: `${diag.gpuLoad}%` }}
@@ -134,12 +135,12 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
           </div>
         </div>
 
-        <div className="border border-gold-900/30 bg-neutral-950/40 p-2.5 rounded">
-          <div className="flex justify-between text-[10px] font-mono text-gold-500 mb-1">
+        <div className={`border rounded p-2.5 transition-colors duration-300 ${isDayMode ? 'border-gold-500/25 bg-white shadow-sm' : 'border-gold-900/30 bg-neutral-950/40'}`}>
+          <div className={`flex justify-between text-[10px] font-mono mb-1 ${isDayMode ? 'text-amber-800 font-bold' : 'text-gold-500'}`}>
             <span>SYSTEM MEM ALLOC</span>
             <span>{diag.memoryUsage.toFixed(0)} MB</span>
           </div>
-          <div className="w-full bg-neutral-900 h-1.5 rounded-full overflow-hidden">
+          <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-neutral-900'}`}>
             <div 
               className="bg-gold-600 h-full transition-all duration-300"
               style={{ width: `${(diag.memoryUsage / 500) * 100}%` }}
@@ -147,12 +148,12 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
           </div>
         </div>
 
-        <div className="border border-gold-900/30 bg-neutral-950/40 p-2.5 rounded">
-          <div className="flex justify-between text-[10px] font-mono text-gold-500 mb-1">
+        <div className={`border rounded p-2.5 transition-colors duration-300 ${isDayMode ? 'border-gold-500/25 bg-white shadow-sm' : 'border-gold-900/30 bg-neutral-950/40'}`}>
+          <div className={`flex justify-between text-[10px] font-mono mb-1 ${isDayMode ? 'text-amber-800 font-bold' : 'text-gold-500'}`}>
             <span>SIGNAL CONSTANCY</span>
             <span>{isStreaming ? diag.signalStrength.toFixed(1) : '0.0'}%</span>
           </div>
-          <div className="w-full bg-neutral-900 h-1.5 rounded-full overflow-hidden">
+          <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-neutral-900'}`}>
             <div 
               className="bg-gold-300 h-full transition-all duration-300"
               style={{ width: `${isStreaming ? diag.signalStrength : 0}%` }}
@@ -162,16 +163,16 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
       </div>
 
       {/* Diagnostics Buttons */}
-      <div className="border border-gold-900/30 bg-neutral-950/20 p-3 rounded">
-        <h4 className="text-[10px] font-mono text-gold-500 uppercase tracking-wider mb-2">DIAGNOSTIC CALIBRATION CONTROL</h4>
+      <div className={`border p-3 rounded transition-colors duration-300 ${isDayMode ? 'border-gold-500/30 bg-white shadow-sm' : 'border-gold-900/30 bg-neutral-950/20'}`}>
+        <h4 className={`text-[10px] font-mono uppercase tracking-wider mb-2 ${isDayMode ? 'text-amber-900 font-extrabold' : 'text-gold-500'}`}>DIAGNOSTIC CALIBRATION CONTROL</h4>
         
         {calibrating ? (
           <div className="space-y-2 py-1">
-            <div className="flex justify-between text-[10px] font-mono text-gold-300">
+            <div className={`flex justify-between text-[10px] font-mono ${isDayMode ? 'text-amber-800' : 'text-gold-300'}`}>
               <span>RUNNING {calibrating.toUpperCase()}...</span>
               <span>{progress}%</span>
             </div>
-            <div className="w-full bg-neutral-900 h-2 rounded border border-gold-900/30 overflow-hidden">
+            <div className={`w-full h-2 rounded border overflow-hidden ${isDayMode ? 'bg-neutral-200 border-gold-500/30' : 'bg-neutral-900 border-gold-900/30'}`}>
               <div 
                 className="bg-gold-400 h-full transition-all duration-150"
                 style={{ width: `${progress}%` }}
@@ -183,19 +184,31 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
             <button
               onClick={() => handleDiagnosticAction('Recalibrate Phase')}
               disabled={!isStreaming}
-              className="px-2 py-1.5 text-[10px] font-mono text-gold-300 hover:text-white bg-neutral-950 hover:bg-gold-950/30 border border-gold-800/40 disabled:opacity-40 rounded transition-colors"
+              className={`px-2 py-1.5 text-[10px] font-mono rounded transition-colors ${
+                isDayMode
+                  ? 'text-amber-900 bg-neutral-50 hover:bg-gold-50/50 border border-gold-500/35 disabled:opacity-40'
+                  : 'text-gold-300 hover:text-white bg-neutral-950 hover:bg-gold-950/30 border border-gold-800/40 disabled:opacity-40'
+              }`}
             >
               RECALIBRATE
             </button>
             <button
               onClick={() => handleDiagnosticAction('Flush Buffers')}
-              className="px-2 py-1.5 text-[10px] font-mono text-gold-300 hover:text-white bg-neutral-950 hover:bg-gold-950/30 border border-gold-800/40 rounded transition-colors"
+              className={`px-2 py-1.5 text-[10px] font-mono rounded transition-colors ${
+                isDayMode
+                  ? 'text-amber-900 bg-neutral-50 hover:bg-gold-50/50 border border-gold-500/35'
+                  : 'text-gold-300 hover:text-white bg-neutral-950 hover:bg-gold-950/30 border border-gold-800/40'
+              }`}
             >
               FLUSH BUFF
             </button>
             <button
               onClick={() => handleDiagnosticAction('Hardware Test')}
-              className="px-2 py-1.5 text-[10px] font-mono text-gold-300 hover:text-white bg-neutral-950 hover:bg-gold-950/30 border border-gold-800/40 rounded transition-colors"
+              className={`px-2 py-1.5 text-[10px] font-mono rounded transition-colors ${
+                isDayMode
+                  ? 'text-amber-900 bg-neutral-50 hover:bg-gold-50/50 border border-gold-500/35'
+                  : 'text-gold-300 hover:text-white bg-neutral-950 hover:bg-gold-950/30 border border-gold-800/40'
+              }`}
             >
               RUN TEST
             </button>
@@ -204,8 +217,8 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
       </div>
 
       {/* Dynamic scrolling console logs */}
-      <div className="flex-1 flex flex-col min-h-[140px] border border-gold-900/30 bg-black rounded p-3 font-mono text-[9px] text-amber-500/90 overflow-hidden">
-        <div className="flex justify-between border-b border-gold-950/80 pb-1 mb-2">
+      <div className={`flex-1 flex flex-col min-h-[140px] border rounded p-3 font-mono text-[9px] overflow-hidden transition-colors duration-300 ${isDayMode ? 'border-gold-500/30 bg-white/95 text-amber-950 shadow-inner' : 'border-gold-900/30 bg-black text-amber-500/90'}`}>
+        <div className={`flex justify-between border-b pb-1 mb-2 ${isDayMode ? 'border-gold-500/10 text-neutral-500' : 'border-gold-950/80 text-neutral-400'}`}>
           <span>CONSOLE STREAMS MONITOR</span>
           <span>LIVE_LOGS</span>
         </div>
@@ -217,10 +230,13 @@ export default function DiagnosticsPanel({ signalSource, isStreaming }: Diagnost
             <div 
               key={i} 
               className={`leading-normal border-l-2 pl-1.5 py-0.5 ${
-                log.includes('SUCCESS') ? 'border-gold-400 text-gold-200 bg-gold-950/10' :
-                log.includes('INFO') ? 'border-gold-700 text-gold-500/90' :
-                log.includes('INITIATING') ? 'border-amber-600 text-amber-300 bg-amber-950/10 animate-pulse' :
-                'border-gold-900 text-gold-400/80'
+                log.includes('SUCCESS') 
+                  ? isDayMode ? 'border-gold-600 text-gold-800 bg-gold-50/40 font-semibold' : 'border-gold-400 text-gold-200 bg-gold-950/10'
+                  : log.includes('INFO') 
+                    ? isDayMode ? 'border-amber-600 text-amber-900' : 'border-gold-700 text-gold-500/90'
+                    : log.includes('INITIATING') 
+                      ? isDayMode ? 'border-amber-500 text-amber-800 bg-amber-50/50 font-semibold animate-pulse' : 'border-amber-600 text-amber-300 bg-amber-950/10 animate-pulse'
+                      : isDayMode ? 'border-neutral-300 text-neutral-600' : 'border-gold-900 text-gold-400/80'
               }`}
             >
               {log}

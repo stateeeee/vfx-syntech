@@ -34,7 +34,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('PARAMETERS');
   const [activeModule, setActiveModule] = useState<ModuleId>('blob_tracker');
   const [signalSource, setSignalSource] = useState<SignalSource>('L_INPUT_CHANNEL_01');
-  const [bufferSize, setBufferSize] = useState<number>(4896);
+  const [bufferSize, setBufferSize] = useState<number>(8192);
   const [globalSyncLocked, setGlobalSyncLocked] = useState(true);
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
   const [isDayMode, setIsDayMode] = useState(false);
@@ -172,9 +172,9 @@ export default function App() {
       description: 'Organic vertex displacement and fluid dynamics mapping for cellular visual structures.',
       status: 'ACTIVE',
       parameters: {
-        displacement: { label: 'VERTEX DISPLACEMENT', value: 55, min: 0, max: 100, step: 1 },
-        fluidDynamics: { label: 'FLUID DYNAMICS', value: 65, min: 0, max: 100, step: 1 },
-        cellSize: { label: 'CELLULAR DENSITY', value: 40, min: 0, max: 100, step: 1 },
+        displacement: { label: 'VERTEX DISPLACEMENT', value: 0, min: 0, max: 100, step: 1 },
+        fluidDynamics: { label: 'FLUID DYNAMICS', value: 0, min: 0, max: 100, step: 1 },
+        cellSize: { label: 'CELLULAR DENSITY', value: 100, min: 0, max: 100, step: 1 },
       },
     },
     {
@@ -550,7 +550,7 @@ export default function App() {
           {/* COLUMN 2: THE MAIN GRAPHIC STAGE (Center Panel) */}
           <section className={`lg:col-span-5 p-6 md:p-8 flex flex-col justify-between transition-colors duration-300 ${isDayMode ? 'bg-[#faf9f5]' : 'bg-[#030303]'}`}>
             {/* Interactive Vfx Canvas Component */}
-            <div className={`flex-1 min-h-[350px] lg:min-h-0 relative rounded border transition-colors duration-300 ${isDayMode ? 'border-gold-500/30 bg-[#fbfaf7]' : 'border-gold-500/25 bg-black'} overflow-hidden flex flex-col`}>
+            <div className={`flex-1 min-h-[450px] relative rounded border transition-colors duration-300 ${isDayMode ? 'border-gold-500/30 bg-[#fbfaf7]' : 'border-gold-500/25 bg-black'} overflow-hidden flex flex-col`}>
               <VfxCanvas
                 activeModule={activeModule}
                 setActiveModule={setActiveModule}
