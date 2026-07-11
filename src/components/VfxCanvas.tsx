@@ -4,6 +4,8 @@ import { ModuleConfig, ModuleId, SignalSource } from '../types';
 interface VfxCanvasProps {
   activeModule: ModuleId;
   setActiveModule: (id: ModuleId) => void;
+  /** Invoked on hub-node click; the shell opens the real effect if one exists */
+  onModuleOpen?: (id: ModuleId) => void;
   modules: ModuleConfig[];
   signalSource: SignalSource;
   isStreaming: boolean;
@@ -38,6 +40,7 @@ interface GraphEdge {
 export default function VfxCanvas({
   activeModule,
   setActiveModule,
+  onModuleOpen,
   modules,
   signalSource,
   isStreaming,
@@ -45,6 +48,10 @@ export default function VfxCanvas({
 }: VfxCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
+
+  // Latest callback, readable from inside the long-lived render loop closure
+  const onModuleOpenRef = useRef(onModuleOpen);
+  onModuleOpenRef.current = onModuleOpen;
   
   // Mouse coordinates tracking
   const mouseRef = useRef({ x: -1000, y: -1000, clicked: false });
@@ -497,14 +504,18 @@ export default function VfxCanvas({
         node.vx += dx * 0.012;
         node.vy += dy * 0.012;
 
-        // 2. Interactive mouse push / repeller field
-        const mdx = node.x - mouseRef.current.x;
-        const mdy = node.y - mouseRef.current.y;
-        const mdist = Math.hypot(mdx, mdy);
-        if (mdist < 80) {
-          const repelForce = (1 - mdist / 80) * 1.5;
-          node.vx += (mdx / (mdist || 1)) * repelForce;
-          node.vy += (mdy / (mdist || 1)) * repelForce;
+        // 2. Interactive mouse push / repeller field.
+        //    Hub nodes are click targets: they must hold their ground under
+        //    the cursor instead of fleeing it, or they become unclickable.
+        if (!node.moduleId) {
+          const mdx = node.x - mouseRef.current.x;
+          const mdy = node.y - mouseRef.current.y;
+          const mdist = Math.hypot(mdx, mdy);
+          if (mdist < 80) {
+            const repelForce = (1 - mdist / 80) * 1.5;
+            node.vx += (mdx / (mdist || 1)) * repelForce;
+            node.vy += (mdy / (mdist || 1)) * repelForce;
+          }
         }
 
         // 3. Audio vibration
@@ -549,6 +560,7 @@ export default function VfxCanvas({
           const clickedHub = nodes[hoveredNodeIdx];
           if (clickedHub.moduleId) {
             setActiveModule(clickedHub.moduleId);
+            onModuleOpenRef.current?.(clickedHub.moduleId);
           }
         }
       } else {

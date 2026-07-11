@@ -6811,5 +6811,54 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 
 </script>
+<script>
+/* ═══════════════════════════════════════════════════════
+   VFX SYNTECH SHELL ADAPTER (bridge phase 1)
+   Speaks the syntech:* postMessage protocol with the shell
+   when embedded in an iframe; inert when opened standalone.
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  if (window.parent === window) return;
+
+  function post(type, payload){
+    try { window.parent.postMessage({ type: type, payload: payload || {} }, '*'); } catch(e) {}
+  }
+
+  function announce(){
+    // params stays empty in phase 1; the full ParamSchema ships in phase 2
+    post('syntech:ready', { effectId: 'blob_tracker', version: '0.1.0', params: [] });
+  }
+  if (document.readyState === 'complete') announce();
+  else window.addEventListener('load', announce);
+
+  // Telemetry heartbeat: real fps / source / recording state, 1 Hz
+  setInterval(function(){
+    var f = 0, sm = 'none', rec = false;
+    try { f = fps || 0; } catch(e) {}
+    try { sm = srcMode || 'none'; } catch(e) {}
+    try { rec = !!mediaRec; } catch(e) {}
+    post('syntech:state', { fps: f, srcMode: sm, recording: rec });
+  }, 1000);
+
+  // Shell is about to tear the iframe down: release every live resource.
+  // Frame removal would release them anyway; this makes it immediate.
+  window.addEventListener('message', function(ev){
+    var d = ev && ev.data;
+    if (!d || d.type !== 'syntech:close') return;
+    try { if (mediaRec) mediaRec.stop(); } catch(e) {}
+    try { stopTracker(); } catch(e) {}
+    try { stopWebcam(); } catch(e) {}
+    try { stopVideo(); } catch(e) {}
+    try { if (panelsRafId) { cancelAnimationFrame(panelsRafId); panelsRafId = null; } } catch(e) {}
+    try { if (panelsBgRafId) { cancelAnimationFrame(panelsBgRafId); panelsBgRafId = null; } } catch(e) {}
+    try { if (nikonStream) { nikonStream.getTracks().forEach(function(t){ t.stop(); }); nikonStream = null; } } catch(e) {}
+    try {
+      if (AudioEngine && AudioEngine._micStream) {
+        AudioEngine._micStream.getTracks().forEach(function(t){ t.stop(); });
+      }
+    } catch(e) {}
+  });
+})();
+</script>
 </body>
 </html>

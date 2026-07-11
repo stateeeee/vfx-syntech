@@ -24,9 +24,12 @@ import {
   Moon
 } from 'lucide-react';
 import { ModuleConfig, ModuleId, ActiveTab, SignalSource } from './types';
+import { EffectTelemetry } from './bridge/types';
+import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
 import VfxCanvas from './components/VfxCanvas';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import AiOracleDrawer from './components/AiOracleDrawer';
+import EffectHost from './components/EffectHost';
 
 export default function App() {
   // App initialization & Stream engine active state
@@ -38,6 +41,24 @@ export default function App() {
   const [globalSyncLocked, setGlobalSyncLocked] = useState(true);
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
   const [isDayMode, setIsDayMode] = useState(false);
+
+  // Real effect currently open full-terminal (null = dashboard/home view)
+  const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
+  const [effectTelemetry, setEffectTelemetry] = useState<EffectTelemetry | null>(null);
+
+  // Selects the module in the dashboard and, when a real effect build is
+  // registered for it, opens it full-terminal (PLAN.md decision #1)
+  const handleModuleOpen = (id: ModuleId) => {
+    setActiveModule(id);
+    if (hasRealEffect(id)) {
+      setOpenEffectId(id);
+    }
+  };
+
+  const handleEffectClose = () => {
+    setOpenEffectId(null);
+    setEffectTelemetry(null);
+  };
 
   // Gemini Intelligence custom states
   const [activeGeminiMode, setActiveGeminiMode] = useState<'art_director' | 'agent' | 'optimizer' | null>(null);
@@ -339,7 +360,16 @@ export default function App() {
           </ul>
         </nav>
 
-        {/* MAIN BODY GRID */}
+        {/* MAIN BODY: full-terminal effect view, or the dashboard grid */}
+        {openEffectId && EFFECTS_REGISTRY[openEffectId].iframeSrc ? (
+          <EffectHost
+            module={modules.find((m) => m.id === openEffectId) || currentModule}
+            iframeSrc={EFFECTS_REGISTRY[openEffectId].iframeSrc}
+            isDayMode={isDayMode}
+            onBack={handleEffectClose}
+            onTelemetry={setEffectTelemetry}
+          />
+        ) : (
         <div className={`grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x ${isDayMode ? 'divide-gold-500/15' : 'divide-gold-500/10'} flex-1 min-h-[500px]`}>
           
           {/* COLUMN 1: SIDEBAR CONTROLS & DYNAMIC PARAMS (Left Panel) */}
@@ -554,6 +584,7 @@ export default function App() {
               <VfxCanvas
                 activeModule={activeModule}
                 setActiveModule={setActiveModule}
+                onModuleOpen={handleModuleOpen}
                 modules={modules}
                 signalSource={signalSource}
                 isStreaming={isStreaming}
@@ -582,7 +613,7 @@ export default function App() {
                   return (
                     <div
                       key={m.id}
-                      onClick={() => setActiveModule(m.id)}
+                      onClick={() => handleModuleOpen(m.id)}
                       className={`p-4 border-t-2 rounded-b text-left transition-all duration-200 cursor-pointer ${
                         isActive
                           ? isDayMode
@@ -618,6 +649,12 @@ export default function App() {
                       <p className={`text-[10px] ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'} line-clamp-3 leading-relaxed font-mono mt-1`}>
                         {m.description}
                       </p>
+
+                      {hasRealEffect(m.id) && (
+                        <div className="mt-2 text-[9px] font-mono font-bold tracking-widest text-gold-500 uppercase">
+                          ▸ Click to launch
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -626,6 +663,7 @@ export default function App() {
           </section>
 
         </div>
+        )}
 
         {/* SYSTEM STATUS FOOTER */}
         <footer className={`border-t transition-colors duration-300 ${isDayMode ? 'border-gold-500/10 bg-[#eae5db] text-neutral-800' : 'border-white/5 bg-[#0a0a0a] text-gray-400'} px-6 md:px-12 py-6 flex flex-wrap justify-between items-center text-[10px] font-mono gap-4`}>
@@ -637,6 +675,24 @@ export default function App() {
                 SYSTEM: {isStreaming ? 'LIVE STREAMING' : 'STANDBY'}
               </span>
             </div>
+
+            {/* Live telemetry reported by the open effect via the bridge */}
+            {openEffectId && effectTelemetry && (
+              <div className="flex items-center gap-4 text-[10px] uppercase tracking-widest">
+                <span className={isDayMode ? 'text-neutral-700' : 'text-gray-500'}>
+                  FPS: <span className="text-gold-500 font-bold">{effectTelemetry.fps}</span>
+                </span>
+                <span className={isDayMode ? 'text-neutral-700' : 'text-gray-500'}>
+                  SOURCE: <span className="text-gold-500 font-bold">{effectTelemetry.srcMode.toUpperCase()}</span>
+                </span>
+                {effectTelemetry.recording && (
+                  <span className="flex items-center gap-1 text-red-500 font-bold animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                    REC
+                  </span>
+                )}
+              </div>
+            )}
             <div className={`text-[10px] uppercase tracking-widest flex items-center gap-2 ${isDayMode ? 'text-neutral-700' : 'text-gray-500'}`}>
               UPTIME: <span className="text-gold-500 font-bold">{formatUptime(uptimeSeconds)}</span>
               
