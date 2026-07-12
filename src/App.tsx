@@ -30,6 +30,7 @@ import VfxCanvas from './components/VfxCanvas';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import AiOracleDrawer from './components/AiOracleDrawer';
 import EffectHost from './components/EffectHost';
+import ChainLab from './components/ChainLab';
 
 export default function App() {
   // App initialization & Stream engine active state
@@ -44,6 +45,8 @@ export default function App() {
 
   // Real effect currently open full-terminal (null = dashboard/home view)
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
+  // Chain Lab (native SynEngine): effects composed in series, phase 5 MVP
+  const [chainOpen, setChainOpen] = useState(false);
   const [effectTelemetry, setEffectTelemetry] = useState<EffectTelemetry | null>(null);
 
   // Sender registered by the open effect's bridge (param:set / preset:apply)
@@ -394,15 +397,28 @@ export default function App() {
           </div>
           
           <ul className={`hidden md:flex gap-8 lg:gap-10 text-[11px] uppercase tracking-[0.3em] font-medium transition-colors ${isDayMode ? 'text-neutral-500' : 'text-gray-400'}`}>
-            <li className="text-gold-500 cursor-default">Home</li>
+            <li
+              className={!chainOpen && !openEffectId ? 'text-gold-500 cursor-default' : `cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}
+              onClick={() => { setChainOpen(false); handleEffectClose(); }}
+            >
+              Home
+            </li>
+            <li
+              className={chainOpen ? 'text-gold-500 cursor-default' : `cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}
+              onClick={() => { handleEffectClose(); setChainOpen(true); }}
+            >
+              Chain Lab
+            </li>
             <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Save</li>
             <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Projects</li>
             <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Contact</li>
           </ul>
         </nav>
 
-        {/* MAIN BODY: full-terminal effect view, or the dashboard grid */}
-        {openEffectId && EFFECTS_REGISTRY[openEffectId].iframeSrc ? (
+        {/* MAIN BODY: chain lab, full-terminal effect view, or the dashboard grid */}
+        {chainOpen ? (
+          <ChainLab isDayMode={isDayMode} onBack={() => setChainOpen(false)} />
+        ) : openEffectId && EFFECTS_REGISTRY[openEffectId].iframeSrc ? (
           <EffectHost
             module={modules.find((m) => m.id === openEffectId) || currentModule}
             iframeSrc={EFFECTS_REGISTRY[openEffectId].iframeSrc}
