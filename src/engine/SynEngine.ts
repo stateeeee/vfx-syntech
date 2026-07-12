@@ -125,6 +125,8 @@ export class SynEngine {
   private fpsT = 0;
   fps = 0;
   onFps?: (fps: number) => void;
+  /** runs at the top of every frame — audio analysis + param modulation hook */
+  beforeFrame?: (now: number) => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -248,6 +250,7 @@ export class SynEngine {
   }
 
   renderFrame(now: number): void {
+    this.beforeFrame?.(now);
     const gl = this.gl;
     const v = this.sourceEl;
     const W = this.canvas.width;

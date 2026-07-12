@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Power } from 'lucide-react';
+import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Power } from 'lucide-react';
 import { SynEngine, EngineNode } from '../engine/SynEngine';
 import { NODE_FACTORY } from '../engine/nodes';
+import { AudioEngine, AudioLevels } from '../engine/AudioEngine';
+import { ParamBus, AUDIO_SOURCES, AudioSource } from '../engine/params';
 import { ModuleId } from '../types';
 
 interface ChainLabProps {
@@ -28,9 +30,15 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const engineRef = useRef<SynEngine | null>(null);
+  const audioRef = useRef<AudioEngine | null>(null);
+  const busRef = useRef<ParamBus | null>(null);
+  if (!audioRef.current) audioRef.current = new AudioEngine();
+  if (!busRef.current) busRef.current = new ParamBus();
   const [fps, setFps] = useState(0);
   const [sourceKind, setSourceKind] = useState<'none' | 'video' | 'webcam'>('none');
   const [error, setError] = useState<string | null>(null);
+  const [audioOn, setAudioOn] = useState(false);
+  const [levels, setLevels] = useState<AudioLevels>({ bass: 0, loud: 0, treble: 0, beat: 0, bpm: null });
   // bump to re-read node state after any mutation (params live in the nodes)
   const [, setRev] = useState(0);
   const bump = () => setRev((r) => r + 1);
@@ -51,14 +59,46 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       node.enabled = active.includes(id);
       engine.addNode(node);
     });
+    // manual/auto control matrix (PLAN §4.4): bases live in the bus, the
+    // audio offsets are layered on top of them at the start of every frame
+    busRef.current!.snapshot(engine.chain);
+    engine.beforeFrame = (now) => {
+      const lv = audioRef.current!.tick(now);
+      busRef.current!.apply(engine.chain, lv);
+    };
     engine.onFps = setFps;
     engine.start();
     engineRef.current = engine;
     return () => {
+      audioRef.current?.stop();
       engine.dispose();
       engineRef.current = null;
     };
   }, []);
+
+  // low-rate UI mirror of the live audio levels (meters + modulated readouts)
+  useEffect(() => {
+    if (!audioOn) return;
+    const id = setInterval(() => setLevels({ ...audioRef.current!.levels }), 120);
+    return () => clearInterval(id);
+  }, [audioOn]);
+
+  const toggleAudio = async () => {
+    const audio = audioRef.current!;
+    if (audio.active) {
+      audio.stop();
+      setAudioOn(false);
+      setLevels({ bass: 0, loud: 0, treble: 0, beat: 0, bpm: null });
+      return;
+    }
+    try {
+      await audio.start();
+      setAudioOn(true);
+      setError(null);
+    } catch (e) {
+      setError('Audio in: ' + (e as Error).message);
+    }
+  };
 
   const loadVideo = async (file: File | null) => {
     if (!file || !engineRef.current) return;
@@ -214,24 +254,70 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
                   className="accent-[#D4AF37]"
                 />
               </label>
-            ) : (
-              <div key={p.key} className="space-y-0.5">
-                <div className={`flex justify-between font-mono text-[9px] uppercase tracking-wider ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
-                  <span>{p.label}</span>
-                  <span className="text-gold-500 font-bold">{Number(node.getParam(p.key)).toFixed((p.step ?? 1) < 1 ? 2 : 0)}</span>
+            ) : (() => {
+              const bus = busRef.current!;
+              const base = bus.getBase(node, p.key);
+              const mod = bus.getMod(node, p.key);
+              const dec = (p.step ?? 1) < 1 ? 2 : 0;
+              // cycle the audio route: off → bass → loud → treble → beat → off
+              const cycleMod = () => {
+                const order: (AudioSource | null)[] = [null, ...AUDIO_SOURCES];
+                const next = order[(order.indexOf(mod?.source ?? null) + 1) % order.length];
+                bus.setMod(node, p.key, next ? { source: next, amount: mod?.amount ?? 0.5 } : null);
+                bump();
+              };
+              return (
+                <div key={p.key} className="space-y-0.5">
+                  <div className={`flex justify-between items-center font-mono text-[9px] uppercase tracking-wider ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
+                    <span>{p.label}</span>
+                    <span className="flex items-center gap-1.5">
+                      {p.reactive && (
+                        <button
+                          type="button"
+                          title="Audio modulation source (PLAN §4.4: base + audio × amount)"
+                          data-testid={`mod-src-${node.id}-${p.key}`}
+                          onClick={cycleMod}
+                          className={`px-1 rounded border text-[8px] font-bold cursor-pointer ${
+                            mod ? 'border-amber-400 bg-amber-400/20 text-amber-400' : 'border-gold-500/25 text-neutral-500 hover:text-gold-500'
+                          }`}
+                        >
+                          {mod ? mod.source.toUpperCase() : '~'}
+                        </button>
+                      )}
+                      <span className="text-gold-500 font-bold">{base.toFixed(dec)}</span>
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    data-testid={`param-${node.id}-${p.key}`}
+                    min={p.min}
+                    max={p.max}
+                    step={p.step}
+                    value={base}
+                    onChange={(e) => { bus.setBase(node, p.key, parseFloat(e.target.value)); bump(); }}
+                    className="w-full h-1 accent-[#D4AF37] cursor-pointer"
+                  />
+                  {mod && (
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-mono text-[8px] uppercase ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>AMT</span>
+                      <input
+                        type="range"
+                        data-testid={`mod-amt-${node.id}-${p.key}`}
+                        min={-1}
+                        max={1}
+                        step={0.05}
+                        value={mod.amount}
+                        onChange={(e) => { bus.setMod(node, p.key, { source: mod.source, amount: parseFloat(e.target.value) }); bump(); }}
+                        className="flex-1 h-1 accent-amber-400 cursor-pointer"
+                      />
+                      <span data-testid={`mod-val-${node.id}-${p.key}`} className="font-mono text-[8px] text-amber-400 w-9 text-right">
+                        {Number(node.getParam(p.key)).toFixed(dec)}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <input
-                  type="range"
-                  data-testid={`param-${node.id}-${p.key}`}
-                  min={p.min}
-                  max={p.max}
-                  step={p.step}
-                  value={Number(node.getParam(p.key))}
-                  onChange={(e) => { node.setParam(p.key, parseFloat(e.target.value)); bump(); }}
-                  className="w-full h-1 accent-[#D4AF37] cursor-pointer"
-                />
-              </div>
-            )
+              );
+            })()
           )}
         </div>
       )}
@@ -311,6 +397,41 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
               className="hidden"
               onChange={(e) => loadVideo(e.target.files?.[0] ?? null)}
             />
+            <button
+              onClick={toggleAudio}
+              data-testid="audio-toggle"
+              className={`w-full flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${
+                audioOn ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-gold-500/30 text-gold-500 hover:bg-gold-500/10'
+              }`}
+            >
+              <Mic className="w-3 h-3" /> {audioOn ? 'Audio In: Live' : 'Audio In (Mic)'}
+            </button>
+            {audioOn && (
+              <div className="space-y-1">
+                {(['bass', 'loud', 'treble'] as const).map((band) => (
+                  <div key={band} className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
+                    <span className={`w-9 ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>{band}</span>
+                    <div className={`flex-1 h-1 rounded overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-white/10'}`}>
+                      <div className="h-full bg-amber-400 transition-[width] duration-100" style={{ width: `${Math.min(100, Math.round(levels[band] * 100))}%` }} />
+                    </div>
+                    <span data-testid={`audio-${band}`} className="w-6 text-right text-amber-400">{Math.round(levels[band] * 100)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
+                  <span className={isDayMode ? 'text-neutral-500' : 'text-neutral-500'}>beat</span>
+                  <span
+                    className="w-2 h-2 rounded-full bg-amber-400"
+                    style={{ opacity: 0.15 + levels.beat * 0.85 }}
+                  />
+                  <span className={`ml-auto ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>
+                    BPM <b className="text-amber-400">{levels.bpm ?? '--'}</b>
+                  </span>
+                </div>
+                <p className={`font-mono text-[8px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-600'}`}>
+                  Route audio onto any reactive parameter with the <b className="text-amber-400">~</b> chip next to its value.
+                </p>
+              </div>
+            )}
             {error && <div className="font-mono text-[9px] text-red-400">{error}</div>}
           </div>
 
