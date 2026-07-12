@@ -19,9 +19,20 @@
 > Parità round 1 ✅: AnalogNode con pipeline completa (pixel sort multi-pass →
 > feedback persistente con zoom/rot/hue → CRT), BlobTrackerNode con FX dentro i blob
 > (invert, thermal, security, glitch) — tutto verificato al pixel. Export Master della
-> catena intera dal Chain Lab ✅ (verificato decodificando l'MP4 prodotto). Prossimi
-> passi Fase 5: porting di Bokeh/Blob Reveal/Anamorphic come nodi, catena creata
-> collegando i nodi del grafo-cervello.
+> catena intera dal Chain Lab ✅ (verificato decodificando l'MP4 prodotto).
+> **Parità round 2 ✅ — tutti e 5 gli effetti sono nodi nativi**: BlobRevealNode
+> (blob su griglia 320×180 + maschera reveal erode/feather/opacity), BokehNode
+> (disc blur Poisson/swirl/explosive/anamorphic in luce lineare + distorsione
+> post-blur + ottica anamorfica) e AnamorphicNode (CA, exposure, bloom, halation,
+> grade filmico, grana, vignette ovale, flare con auto-detect hotspot CPU) —
+> Chain Lab ora monta il rack completo di 5 nodi, 13/13 check pixel-level passati.
+> **Grafo-cervello funzionale ✅**: trascinare un nodo-hub su un altro nel grafo
+> della home crea la catena (drag = link, click = apre l'effetto); la catena è
+> disegnata in oro con frecce di direzione, persiste in localStorage, e "Open
+> Chain Lab" la apre con i nodi collegati abilitati nell'ordine del grafo —
+> verificato end-to-end (7/7 check). Prossimi passi Fase 5: parità visiva più
+> profonda dei nodi (es. maschera MediaPipe nei nodi Bokeh/Blob Reveal, pannelli
+> 3D del tracker), audio-reactive nel motore nativo.
 
 ---
 
@@ -274,11 +285,12 @@ Prerequisito: porting (lo "step 2" della decisione #4). Non si può fare con gli
 - [ ] Porting del **core di rendering del Blob Tracker** a `EffectNode` (la UI resta React).
 - [ ] Porting del secondo effetto più semplice (probabilmente **Analog**: CRT/jitter/chroma
       sono shader puri, ideali come primo nodo di catena).
-- [ ] MVP catena: **2 effetti in serie** a 60 fps @ 1080p (es. Blob Tracker → Analog).
-- [ ] UI di chaining coerente col "cervello": nel grafo home, **collegare due nodi = creare
+- [x] MVP catena: **2 effetti in serie** a 60 fps @ 1080p (es. Blob Tracker → Analog).
+- [x] UI di chaining coerente col "cervello": nel grafo home, **collegare due nodi = creare
       la catena** (l'identità Obsidian diventa funzionale, non solo estetica).
-- [ ] Porting progressivo dei restanti effetti; la versione iframe resta il fallback finché
-      ogni port non è alla pari.
+- [x] Porting dei restanti effetti come nodi (Blob Reveal, Bokeh, Anamorphic Lab); la
+      versione iframe resta il fallback finché ogni port non è alla pari (mancano ancora:
+      maschera MediaPipe, pannelli 3D, audio-reactive nativo).
 
 ### Fase 6 — Estetica finale, performance, rifinitura
 
