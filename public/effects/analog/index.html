@@ -773,6 +773,8 @@ body {
   #fps-display { margin-left:0; }
 }
 </style>
+<script src="../vendor/mp4-muxer.min.js"></script>
+<script src="../vendor/syntech-export.js"></script>
 </head>
 <body translate="no">
 
@@ -1154,6 +1156,10 @@ body {
         </button>
         <div id="rec-time">00:00:00</div>
         <div style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Seeks to 00:00:00 · canvas → WebM · Audio preserved</div>
+        <!-- MASTER QUALITY EXPORT (offline frame-accurate render, phase 4) -->
+        <button class="rec-btn" id="btn-master" title="Offline frame-accurate render: MP4 at very high bitrate, no dropped frames. Needs a loaded video file.">◆ MASTER MP4</button>
+        <button class="rec-btn" id="btn-pngseq" title="Mathematically lossless PNG sequence written to a folder you pick.">▦ PNG SEQUENCE</button>
+        <div id="master-progress" style="font-size:8px;letter-spacing:1px;color:var(--t2);min-height:11px"></div>
       </div>
     </div>
 
@@ -1922,8 +1928,9 @@ document.getElementById('play-overlay').addEventListener('click',()=>{video.play
    ========================================= */
 let lastFPS=0,fpsF=0,lastNow=0;
 
+let renderRafId=0; // captured so Master Export can freeze/step the loop
 function render(now){
-  requestAnimationFrame(render);
+  renderRafId=requestAnimationFrame(render);
   STATE.frameCount++;
   if(STATE.startTime===0)STATE.startTime=now;
   const dt=Math.min((now-(lastNow||now))/1000,0.1);
@@ -1988,7 +1995,7 @@ function render(now){
 
   blit(null,crtFBO.tex);
 }
-requestAnimationFrame(render);
+renderRafId=requestAnimationFrame(render);
 
 /* =========================================
    KNOB SYSTEM
@@ -2580,6 +2587,88 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 
 })();
 
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════
+   MASTER QUALITY EXPORT wiring — engine lives in
+   ../vendor/syntech-export.js (offline seek→render→encode).
+   render(now) takes its clock as a parameter, so frames are
+   stepped with a synthetic clock: feedback/CRT time effects
+   advance exactly one frame per exported frame.
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  const progEl = document.getElementById('master-progress');
+  let exporting = false;
+  let clock = 0;
+
+  function setProg(txt){ if (progEl) progEl.textContent = txt; }
+
+  async function renderFrameAt(){
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; }
+    clock += 1000 / 30;
+    render(clock);              // schedules one RAF itself…
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; } // …cancel it
+    return canvas;              // #glcanvas, native 1920×1080
+  }
+
+  async function runExport(kind){
+    if (exporting) return;
+    if (STATE.srcMode !== 'video' || !isFinite(video.duration) || !video.duration) {
+      setProg('✗ load a video file first');
+      return;
+    }
+    exporting = true;
+    const btnM = document.getElementById('btn-master');
+    const btnP = document.getElementById('btn-pngseq');
+    btnM.disabled = true; btnP.disabled = true;
+    const t0 = video.currentTime;
+    video.pause();
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; }
+    clock = performance.now();
+
+    try {
+      const opts = {
+        video: video, fps: 30, getFrame: renderFrameAt,
+        onProgress: function(done, total, phase){
+          setProg((kind === 'png' ? 'PNG ' : 'MASTER ') + phase.toUpperCase() + ' ' + done + '/' + total);
+        }
+      };
+      let res;
+      if (kind === 'png') {
+        res = await SyntechExport.exportPngSequence(opts);
+        setProg('✓ ' + res.frames + ' PNG frames saved');
+      } else {
+        res = await SyntechExport.exportMasterQuality(
+          Object.assign(opts, { filename: 'vfx_analog_' + Date.now() + '.mp4' })
+        );
+        setProg('✓ ' + res.filename + ' (' + res.codec + (res.audio ? ' + audio' : '') + ')');
+      }
+      try {
+        if (window.parent !== window) window.parent.postMessage({
+          type: 'syntech:export:done',
+          payload: { blobUrl: '', mime: kind === 'png' ? 'image/png' : 'video/mp4',
+                     filename: kind === 'png' ? 'png-sequence' : res.filename }
+        }, '*');
+      } catch(e){}
+    } catch(err) {
+      console.warn('Master export:', err);
+      setProg('✗ ' + (err && err.message ? err.message : 'export failed'));
+    } finally {
+      exporting = false;
+      btnM.disabled = false; btnP.disabled = false;
+      await new Promise(function(r){
+        const on = function(){ video.removeEventListener('seeked', on); r(); };
+        video.addEventListener('seeked', on);
+        setTimeout(r, 1500);
+        video.currentTime = t0;
+      });
+      if (!renderRafId) renderRafId = requestAnimationFrame(render);
+    }
+  }
+
+  document.getElementById('btn-master').addEventListener('click', function(){ runExport('mp4'); });
+  document.getElementById('btn-pngseq').addEventListener('click', function(){ runExport('png'); });
+})();
 </script>
 <script>
 /* ═══════════════════════════════════════════════════════

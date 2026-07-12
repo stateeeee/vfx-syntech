@@ -653,6 +653,8 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 #fs-close:hover{border-color:rgba(232,192,0,.5);color:var(--amber);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 0 16px rgba(232,192,0,.2),0 4px 12px rgba(0,0,0,.8)}
 </style>
+<script src="../vendor/mp4-muxer.min.js"></script>
+<script src="../vendor/syntech-export.js"></script>
 </head>
 <body translate="no">
 <!-- FULLSCREEN OVERLAY -->
@@ -868,6 +870,10 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="rec-btn"><div class="rec-dot"></div><span>REC</span></button>
         <div id="rec-time">00:00:00</div>
+        <!-- MASTER QUALITY EXPORT (offline frame-accurate render, phase 4) -->
+        <button class="fs-btn" id="btn-master" title="Offline frame-accurate render: MP4 at very high bitrate, no dropped frames. Needs a loaded video file.">◆&nbsp;&nbsp;MASTER MP4</button>
+        <button class="fs-btn" id="btn-pngseq" title="Mathematically lossless PNG sequence written to a folder you pick.">▦&nbsp;&nbsp;PNG SEQUENCE</button>
+        <div id="master-progress" style="font-size:8px;letter-spacing:1px;color:var(--txt-dim,#888);min-height:11px"></div>
       </div>
     </div>
 
@@ -1722,6 +1728,84 @@ function fmtDur(s){if(!s||isNaN(s))return '--';return String(Math.floor(s/60)).p
 /* ─── INIT ───────────────────────────────────────────────────── */
 fit();
 initSeg();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════
+   MASTER QUALITY EXPORT wiring — engine lives in
+   ../vendor/syntech-export.js (offline seek→render→encode).
+   frame() is async (MediaPipe segmentation): each exported
+   frame awaits one full deterministic pass into dc.
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  const progEl = document.getElementById('master-progress');
+  let exporting = false;
+
+  function setProg(txt){ if (progEl) progEl.textContent = txt; }
+
+  async function renderFrameAt(){
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+    const wasPaused = paused; paused = false;
+    await frame();              // async pass, schedules one RAF itself…
+    if (animId) { cancelAnimationFrame(animId); animId = null; } // …cancel it
+    paused = wasPaused;
+    return dc;
+  }
+
+  async function runExport(kind){
+    if (exporting) return;
+    const isFile = !vid.srcObject && isFinite(vid.duration) && vid.duration > 0;
+    if (!isFile) { setProg('✗ load a video file first'); return; }
+    exporting = true;
+    const btnM = document.getElementById('btn-master');
+    const btnP = document.getElementById('btn-pngseq');
+    btnM.disabled = true; btnP.disabled = true;
+    const t0 = vid.currentTime;
+    vid.pause();
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+
+    try {
+      const opts = {
+        video: vid, fps: 30, getFrame: renderFrameAt,
+        onProgress: function(done, total, phase){
+          setProg((kind === 'png' ? 'PNG ' : 'MASTER ') + phase.toUpperCase() + ' ' + done + '/' + total);
+        }
+      };
+      let res;
+      if (kind === 'png') {
+        res = await SyntechExport.exportPngSequence(opts);
+        setProg('✓ ' + res.frames + ' PNG frames saved');
+      } else {
+        res = await SyntechExport.exportMasterQuality(
+          Object.assign(opts, { filename: 'vfx_blobreveal_' + Date.now() + '.mp4' })
+        );
+        setProg('✓ ' + res.filename + ' (' + res.codec + (res.audio ? ' + audio' : '') + ')');
+      }
+      try {
+        if (window.parent !== window) window.parent.postMessage({
+          type: 'syntech:export:done',
+          payload: { blobUrl: '', mime: kind === 'png' ? 'image/png' : 'video/mp4',
+                     filename: kind === 'png' ? 'png-sequence' : res.filename }
+        }, '*');
+      } catch(e){}
+    } catch(err) {
+      console.warn('Master export:', err);
+      setProg('✗ ' + (err && err.message ? err.message : 'export failed'));
+    } finally {
+      exporting = false;
+      btnM.disabled = false; btnP.disabled = false;
+      await new Promise(function(r){
+        const on = function(){ vid.removeEventListener('seeked', on); r(); };
+        vid.addEventListener('seeked', on);
+        setTimeout(r, 1500);
+        vid.currentTime = t0;
+      });
+      if (!animId) animId = requestAnimationFrame(frame);
+    }
+  }
+
+  document.getElementById('btn-master').addEventListener('click', function(){ runExport('mp4'); });
+  document.getElementById('btn-pngseq').addEventListener('click', function(){ runExport('png'); });
+})();
 </script>
 <script>
 /* ═══════════════════════════════════════════════════════
