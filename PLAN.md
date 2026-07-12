@@ -436,8 +436,8 @@ Come concordato (decisione #11): idee elencate qui, si implementano solo dopo co
 
 | Proposta | Cosa aggiunge | Costo |
 |---|---|---|
-| **Audio da file** | Reattività su una traccia musicale caricata (non solo mic) — fondamentale per music video | Basso |
-| **BPM / tap tempo** | Pulsazioni degli effetti sincronizzate al tempo del brano | Basso |
+| **Audio da file** ✅ | Reattività su una traccia musicale caricata (non solo mic) — fondamentale per music video. *Fatto: `AudioEngine.startFile` con trasporto play/pause/seek/loop nel Chain Lab, bande e beat condivisi col mic (8/8 check).* | Basso |
+| **BPM / tap tempo** | Pulsazioni degli effetti sincronizzate al tempo del brano *(la stima BPM dal beat detection esiste già; manca il tap-tempo manuale)* | Basso |
 | **Web MIDI** (Chrome/Edge) | Controller MIDI fisici che pilotano i parametri, stile VJ | Medio |
 | **Audio di sistema** | Reattività sull'audio del computer via condivisione schermo con audio | Basso (UX da spiegare) |
 | **Randomize / A-B morph** | Tasto "sorprendimi" e morphing tra due preset | Basso |

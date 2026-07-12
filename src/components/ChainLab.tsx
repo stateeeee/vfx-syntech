@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Power, Save, Sparkle, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Music, Pause, Play as PlayIcon, Power, Repeat, Save, Sparkle, Trash2 } from 'lucide-react';
 import { SynEngine, EngineNode } from '../engine/SynEngine';
 import { NODE_FACTORY } from '../engine/nodes';
-import { AudioEngine } from '../engine/AudioEngine';
+import { AudioEngine, FileTransport } from '../engine/AudioEngine';
 import { VideoAnalyzer } from '../engine/VideoAnalyzer';
 import { PersonMask, PersonMaskState } from '../engine/PersonMask';
 import { ParamBus, MOD_SOURCES, ModSource, ParamBusState } from '../engine/params';
@@ -54,6 +54,7 @@ const readPresets = (): ChainPreset[] => {
 export default function ChainLab({ isDayMode, onBack, initialChain, initialPreset }: ChainLabProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const audioFileRef = useRef<HTMLInputElement | null>(null);
   const engineRef = useRef<SynEngine | null>(null);
   const audioRef = useRef<AudioEngine | null>(null);
   const videoAnRef = useRef<VideoAnalyzer | null>(null);
@@ -69,6 +70,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
   const [sourceKind, setSourceKind] = useState<'none' | 'video' | 'webcam'>('none');
   const [error, setError] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
+  const [transport, setTransport] = useState<FileTransport | null>(null);
   const [signals, setSignals] = useState({ bass: 0, loud: 0, treble: 0, beat: 0, motion: 0, bright: 0, bpm: null as number | null });
   const [presets, setPresets] = useState<ChainPreset[]>(readPresets);
   const [presetName, setPresetName] = useState('');
@@ -134,23 +136,37 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
       const va = videoAnRef.current!;
       setSignals({ bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat, bpm: lv.bpm, motion: va.motion, bright: va.bright });
       setSegState(maskRef.current!.state);
+      setTransport(audioRef.current!.transport);
+      setAudioOn(audioRef.current!.active);
     }, 150);
     return () => clearInterval(id);
   }, []);
 
   const toggleAudio = async () => {
     const audio = audioRef.current!;
-    if (audio.active) {
+    if (audio.mode === 'mic') {
       audio.stop(); // zeroes its levels; the signals mirror picks that up
       setAudioOn(false);
       return;
     }
     try {
-      await audio.start();
+      await audio.startMic();
       setAudioOn(true);
       setError(null);
     } catch (e) {
       setError('Audio in: ' + (e as Error).message);
+    }
+  };
+
+  // §10: reactivity from a loaded music track, not just the mic
+  const loadAudioFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      await audioRef.current!.startFile(file);
+      setAudioOn(true);
+      setError(null);
+    } catch (e) {
+      setError('Audio file: ' + (e as Error).message);
     }
   };
 
@@ -588,15 +604,65 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
               className="hidden"
               onChange={(e) => loadVideo(e.target.files?.[0] ?? null)}
             />
-            <button
-              onClick={toggleAudio}
-              data-testid="audio-toggle"
-              className={`w-full flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${
-                audioOn ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-gold-500/30 text-gold-500 hover:bg-gold-500/10'
-              }`}
-            >
-              <Mic className="w-3 h-3" /> {audioOn ? 'Audio In: Live' : 'Audio In (Mic)'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={toggleAudio}
+                data-testid="audio-toggle"
+                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${
+                  audioOn && !transport ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-gold-500/30 text-gold-500 hover:bg-gold-500/10'
+                }`}
+              >
+                <Mic className="w-3 h-3" /> {audioOn && !transport ? 'Mic: Live' : 'Mic'}
+              </button>
+              <button
+                onClick={() => audioFileRef.current?.click()}
+                data-testid="audio-file-btn"
+                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${
+                  transport ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-gold-500/30 text-gold-500 hover:bg-gold-500/10'
+                }`}
+              >
+                <Music className="w-3 h-3" /> Track
+              </button>
+            </div>
+            <input
+              ref={audioFileRef}
+              type="file"
+              accept="audio/*"
+              data-testid="audio-file"
+              className="hidden"
+              onChange={(e) => loadAudioFile(e.target.files?.[0] ?? null)}
+            />
+            {transport && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => audioRef.current!.togglePlay()}
+                    data-testid="audio-playpause"
+                    className="p-1 rounded border border-amber-400/40 text-amber-400 hover:bg-amber-400/10 cursor-pointer"
+                  >
+                    {transport.playing ? <Pause className="w-3 h-3" /> : <PlayIcon className="w-3 h-3" />}
+                  </button>
+                  <span data-testid="audio-track-name" className={`flex-1 truncate font-mono text-[8px] ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>{transport.name}</span>
+                  <button
+                    onClick={() => audioRef.current!.setLoop(!transport.loop)}
+                    title="Loop"
+                    className={`p-1 rounded border cursor-pointer ${transport.loop ? 'border-amber-400 text-amber-400' : 'border-gold-500/25 text-neutral-500'}`}
+                  >
+                    <Repeat className="w-3 h-3" />
+                  </button>
+                </div>
+                <input
+                  type="range"
+                  data-testid="audio-seek"
+                  min={0}
+                  max={transport.duration || 0}
+                  step={0.1}
+                  value={transport.currentTime}
+                  onChange={(e) => audioRef.current!.seek(parseFloat(e.target.value))}
+                  className="w-full h-1 accent-amber-400 cursor-pointer"
+                />
+              </div>
+            )}
             {audioOn && (
               <div className="space-y-1">
                 {(['bass', 'loud', 'treble'] as const).map((band) => (
