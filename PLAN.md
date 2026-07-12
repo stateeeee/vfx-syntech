@@ -13,7 +13,11 @@
 > frame-per-frame con WebCodecs (H.264 80 Mbps, fallback VP9/AV1), MP4 muxato
 > in-browser, audio AAC, sequenza PNG lossless su cartella; pulsanti MASTER MP4 e
 > PNG SEQUENCE nella sezione Export di ogni effetto, tutti verificati end-to-end.
-> Prossimo: **Fase 5** (porting + catena di effetti) o Fase 6 (estetica finale, polish).
+> **Fase 5 MVP ✅**: SynEngine (`src/engine/`) — render graph nativo a singolo contesto
+> WebGL2, nodi AnalogNode e BlobTrackerNode portati, vista **Chain Lab** nel menu con
+> 2 effetti in serie (bypass, riordino, parametri live), verificata a livello di pixel.
+> Prossimi passi Fase 5: porting progressivo degli altri nodi a parità con gli
+> standalone, catena creata collegando i nodi del grafo-cervello, export dal motore.
 
 ---
 
