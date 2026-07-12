@@ -1,20 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Power } from 'lucide-react';
 import { SynEngine, EngineNode } from '../engine/SynEngine';
-import { BlobTrackerNode } from '../engine/nodes/BlobTrackerNode';
-import { AnalogNode } from '../engine/nodes/AnalogNode';
+import { NODE_FACTORY } from '../engine/nodes';
+import { ModuleId } from '../types';
 
 interface ChainLabProps {
   isDayMode: boolean;
   onBack: () => void;
+  /**
+   * Effects to start enabled, in chain order — set when the chain was
+   * created by linking nodes on the brain graph. The remaining effects
+   * are still added to the rack, just bypassed.
+   */
+  initialChain?: ModuleId[];
 }
 
+// default rack order: trackers first, lens/grade passes last
+const RACK_ORDER: ModuleId[] = ['blob_tracker', 'blob_reveal', 'bokeh', 'analog', 'anamorphic_lab'];
+const DEFAULT_ENABLED: ModuleId[] = ['blob_tracker', 'analog'];
+
 /**
- * CHAIN LAB — the first native SynEngine surface (PLAN.md phase 5 MVP):
- * one WebGL context, effects composed in series on the same frame.
- * This is the capability the iframe architecture cannot provide.
+ * CHAIN LAB — the native SynEngine surface (PLAN.md phase 5):
+ * one WebGL context, all five effects composed in series on the same
+ * frame. This is the capability the iframe architecture cannot provide.
  */
-export default function ChainLab({ isDayMode, onBack }: ChainLabProps) {
+export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const engineRef = useRef<SynEngine | null>(null);
@@ -34,8 +44,13 @@ export default function ChainLab({ isDayMode, onBack }: ChainLabProps) {
       setError((e as Error).message);
       return;
     }
-    engine.addNode(new BlobTrackerNode());
-    engine.addNode(new AnalogNode());
+    const active = initialChain?.length ? initialChain : DEFAULT_ENABLED;
+    const rack = [...active, ...RACK_ORDER.filter((id) => !active.includes(id))];
+    rack.forEach((id) => {
+      const node = NODE_FACTORY[id]();
+      node.enabled = active.includes(id);
+      engine.addNode(node);
+    });
     engine.onFps = setFps;
     engine.start();
     engineRef.current = engine;
@@ -193,6 +208,7 @@ export default function ChainLab({ isDayMode, onBack }: ChainLabProps) {
                 {p.label}
                 <input
                   type="checkbox"
+                  data-testid={`param-${node.id}-${p.key}`}
                   checked={Number(node.getParam(p.key)) >= 0.5}
                   onChange={(e) => { node.setParam(p.key, e.target.checked ? 1 : 0); bump(); }}
                   className="accent-[#D4AF37]"
@@ -206,6 +222,7 @@ export default function ChainLab({ isDayMode, onBack }: ChainLabProps) {
                 </div>
                 <input
                   type="range"
+                  data-testid={`param-${node.id}-${p.key}`}
                   min={p.min}
                   max={p.max}
                   step={p.step}
