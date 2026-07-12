@@ -9,16 +9,52 @@ import { EngineNode, NodeRenderContext, Target, QUAD_VS, compileProgram, createT
    Parameter keys match the standalone effect.
    ═══════════════════════════════════════════════════════════════ */
 
+const MAX_BLOBS = 16;
+
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uTex;
 uniform sampler2D uOverlay;
+uniform vec4 uBlobs[${MAX_BLOBS}]; // x,y,w,h in top-left normalized coords
+uniform int uBlobCount;
+uniform float uTime;
+uniform float uFxInvert, uFxThermal, uFxSecurity, uFxGlitch, uFxOpacity;
 out vec4 o;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec3 thermal(float t){
+  return clamp(vec3(t * 3.0 - 1.0, t * 3.0 - 0.5, 1.0 - t * 2.0) * step(0.02, t), 0.0, 1.0);
+}
 void main(){
-  vec4 base = texture(uTex, vUV);
-  vec4 ov = texture(uOverlay, vec2(vUV.x, 1.0 - vUV.y));
-  o = vec4(mix(base.rgb, ov.rgb, ov.a), 1.0);
+  vec3 base = texture(uTex, vUV).rgb;
+  vec2 tl = vec2(vUV.x, 1.0 - vUV.y); // top-left space, same as blob rects
+  bool inside = false;
+  for (int i = 0; i < ${MAX_BLOBS}; i++) {
+    if (i >= uBlobCount) break;
+    vec4 b = uBlobs[i];
+    if (tl.x >= b.x && tl.x <= b.x + b.z && tl.y >= b.y && tl.y <= b.y + b.w) { inside = true; break; }
+  }
+  if (inside && uFxOpacity > 0.0) {
+    vec3 fx = base;
+    vec2 suv = vUV;
+    if (uFxGlitch > 0.0) {
+      float band = floor(tl.y * 60.0);
+      float g = hash(vec2(band, floor(uTime * 17.0)));
+      if (g < uFxGlitch * 0.03) suv.x += (hash(vec2(band, uTime)) - 0.5) * uFxGlitch * 0.02;
+      fx = texture(uTex, suv).rgb;
+    }
+    float lum = dot(fx, vec3(0.299, 0.587, 0.114));
+    if (uFxThermal > 0.5) fx = thermal(lum);
+    if (uFxSecurity > 0.5) {
+      float sl = sin(tl.y * 500.0) * 0.5 + 0.5;
+      fx = vec3(0.1, 1.0, 0.35) * lum * (0.75 + 0.25 * sl)
+         + (hash(suv * 700.0 + fract(uTime) * 91.0) - 0.5) * 0.12;
+    }
+    if (uFxInvert > 0.5) fx = 1.0 - fx;
+    base = mix(base, fx, uFxOpacity);
+  }
+  vec4 ov = texture(uOverlay, tl);
+  o = vec4(mix(base, ov.rgb, ov.a), 1.0);
 }`;
 
 interface Blob { x: number; y: number; w: number; h: number; cx: number; cy: number; area: number }
@@ -32,6 +68,7 @@ export class BlobTrackerNode implements EngineNode {
   readonly params: ParamSchema[];
   private values: Record<string, number> = {
     threshold: 127, minArea: 12, maxBlobs: 12, connWidth: 2, showBoxes: 1, showConnections: 1, dashedLines: 0, showLabels: 1,
+    fxInvert: 0, fxThermal: 0, fxSecurity: 0, glitch: 0, fxOpacity: 100,
   };
 
   private prog: WebGLProgram | null = null;
@@ -60,6 +97,11 @@ export class BlobTrackerNode implements EngineNode {
       P('showConnections', 'CONNECTIONS', 0, 1, 1, 'Draw lines between blob centers', true),
       P('dashedLines', 'DASHED LINES', 0, 1, 1, 'Dashed instead of solid lines', true),
       P('showLabels', 'LABELS', 0, 1, 1, 'Coordinates label next to each blob', true),
+      P('fxInvert', 'FX INVERT', 0, 1, 1, 'Invert colors inside blobs', true),
+      P('fxThermal', 'FX THERMAL', 0, 1, 1, 'Thermal-camera palette inside blobs', true),
+      P('fxSecurity', 'FX SECURITY', 0, 1, 1, 'Security-camera look inside blobs', true),
+      P('glitch', 'GLITCH', 0, 20, 1, 'Digital glitch intensity inside blobs'),
+      P('fxOpacity', 'FX OPACITY', 0, 100, 1, 'Opacity of the FX rendered inside blobs'),
     ];
   }
 
@@ -75,7 +117,8 @@ export class BlobTrackerNode implements EngineNode {
 
   init(gl: WebGL2RenderingContext): void {
     this.prog = compileProgram(gl, QUAD_VS, COMPOSITE_FS);
-    ['uTex', 'uOverlay'].forEach((u) => { this.uniforms[u] = gl.getUniformLocation(this.prog!, u); });
+    ['uTex', 'uOverlay', 'uBlobs', 'uBlobCount', 'uTime', 'uFxInvert', 'uFxThermal', 'uFxSecurity', 'uFxGlitch', 'uFxOpacity']
+      .forEach((u) => { this.uniforms[u] = gl.getUniformLocation(this.prog!, u); });
     this.overlayTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -230,6 +273,21 @@ export class BlobTrackerNode implements EngineNode {
     gl.bindTexture(gl.TEXTURE_2D, inputTex);
     gl.uniform1i(this.uniforms.uTex, 0);
     gl.uniform1i(this.uniforms.uOverlay, 1);
+    const rects = new Float32Array(MAX_BLOBS * 4);
+    const n = Math.min(this.lastBlobs.length, MAX_BLOBS);
+    for (let i = 0; i < n; i++) {
+      const b = this.lastBlobs[i];
+      rects.set([b.x, b.y, b.w, b.h], i * 4);
+    }
+    gl.uniform4fv(this.uniforms.uBlobs, rects);
+    gl.uniform1i(this.uniforms.uBlobCount, n);
+    gl.uniform1f(this.uniforms.uTime, ctx.time);
+    const v = this.values;
+    gl.uniform1f(this.uniforms.uFxInvert, v.fxInvert);
+    gl.uniform1f(this.uniforms.uFxThermal, v.fxThermal);
+    gl.uniform1f(this.uniforms.uFxSecurity, v.fxSecurity);
+    gl.uniform1f(this.uniforms.uFxGlitch, v.glitch);
+    gl.uniform1f(this.uniforms.uFxOpacity, v.fxOpacity / 100);
     drawQuad();
     return this.target.tex;
   }
