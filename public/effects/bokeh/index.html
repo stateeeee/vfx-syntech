@@ -783,6 +783,8 @@ body {
 #pill-rec { display:none; }
 #pill-rec .dot { background:var(--red); animation:blink 1s infinite; }
 </style>
+<script src="../vendor/mp4-muxer.min.js"></script>
+<script src="../vendor/syntech-export.js"></script>
 </head>
 <body translate="no" class="notranslate">
 
@@ -1211,6 +1213,10 @@ body {
         <button class="rec-btn" id="btn-rec-anam"><div class="rec-dot"></div>ANAMORPHIC EXPORT</button>
         <div id="rec-anam-time">00:00:00</div>
         <div id="rec-anam-hint">Exports at the true widescreen frame (no canvas bars) — current ratio <span id="rec-anam-ratio">2.39</span> : 1</div>
+        <!-- MASTER QUALITY EXPORT (offline frame-accurate render, phase 4) -->
+        <button class="fs-btn" id="btn-master" title="Offline frame-accurate render: MP4 at very high bitrate, no dropped frames. Needs a loaded video file.">◆&nbsp;&nbsp;MASTER MP4</button>
+        <button class="fs-btn" id="btn-pngseq" title="Mathematically lossless PNG sequence written to a folder you pick.">▦&nbsp;&nbsp;PNG SEQUENCE</button>
+        <div id="master-progress" style="font-size:8px;letter-spacing:1px;color:var(--t2,#888);min-height:11px"></div>
       </div>
     </div>
 
@@ -2756,8 +2762,9 @@ CA.addEventListener('drop',e=>{e.preventDefault();DO.classList.remove('drag-over
    ========================================= */
 let lastFPS=0,fpsF=0,lastNow=0;
 
+let renderRafId=0; // captured so Master Export can freeze/step the loop
 function render(now){
-  requestAnimationFrame(render);
+  renderRafId=requestAnimationFrame(render);
   STATE.frameCount++;
   if(STATE.startTime===0)STATE.startTime=now;
   const dt=Math.min((now-(lastNow||now))/1000,0.1);
@@ -2826,7 +2833,7 @@ function render(now){
   /* STAGE 3: COMPOSITE sharp subject over processed background */
   drawComposite(videoTex, bgTex, t);
 }
-requestAnimationFrame(render);
+renderRafId=requestAnimationFrame(render);
 
 /* =========================================
    KNOB SYSTEM
@@ -3801,6 +3808,86 @@ function syncSectionTitleGradients(){
                 (still correct, just not actively re-synced) animation */ }
 }
 requestAnimationFrame(syncSectionTitleGradients);
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════
+   MASTER QUALITY EXPORT wiring — engine lives in
+   ../vendor/syntech-export.js (offline seek→render→encode).
+   render(now) takes its clock as a parameter: frames are
+   stepped with a synthetic clock so time-based looks
+   (breathing, distortion) advance one frame per frame.
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  const progEl = document.getElementById('master-progress');
+  let exporting = false;
+  let clock = 0;
+
+  function setProg(txt){ if (progEl) progEl.textContent = txt; }
+
+  async function renderFrameAt(){
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; }
+    clock += 1000 / 30;
+    render(clock);
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; }
+    return canvas; // #glcanvas
+  }
+
+  async function runExport(kind){
+    if (exporting) return;
+    const isFile = STATE.hasVideo && !video.srcObject && isFinite(video.duration) && video.duration > 0;
+    if (!isFile) { setProg('✗ load a video file first'); return; }
+    exporting = true;
+    const btnM = document.getElementById('btn-master');
+    const btnP = document.getElementById('btn-pngseq');
+    btnM.disabled = true; btnP.disabled = true;
+    const t0 = video.currentTime;
+    video.pause();
+    if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; }
+    clock = performance.now();
+
+    try {
+      const opts = {
+        video: video, fps: 30, getFrame: renderFrameAt,
+        onProgress: function(done, total, phase){
+          setProg((kind === 'png' ? 'PNG ' : 'MASTER ') + phase.toUpperCase() + ' ' + done + '/' + total);
+        }
+      };
+      let res;
+      if (kind === 'png') {
+        res = await SyntechExport.exportPngSequence(opts);
+        setProg('✓ ' + res.frames + ' PNG frames saved');
+      } else {
+        res = await SyntechExport.exportMasterQuality(
+          Object.assign(opts, { filename: 'vfx_bokeh_' + Date.now() + '.mp4' })
+        );
+        setProg('✓ ' + res.filename + ' (' + res.codec + (res.audio ? ' + audio' : '') + ')');
+      }
+      try {
+        if (window.parent !== window) window.parent.postMessage({
+          type: 'syntech:export:done',
+          payload: { blobUrl: '', mime: kind === 'png' ? 'image/png' : 'video/mp4',
+                     filename: kind === 'png' ? 'png-sequence' : res.filename }
+        }, '*');
+      } catch(e){}
+    } catch(err) {
+      console.warn('Master export:', err);
+      setProg('✗ ' + (err && err.message ? err.message : 'export failed'));
+    } finally {
+      exporting = false;
+      btnM.disabled = false; btnP.disabled = false;
+      await new Promise(function(r){
+        const on = function(){ video.removeEventListener('seeked', on); r(); };
+        video.addEventListener('seeked', on);
+        setTimeout(r, 1500);
+        video.currentTime = t0;
+      });
+      if (!renderRafId) renderRafId = requestAnimationFrame(render);
+    }
+  }
+
+  document.getElementById('btn-master').addEventListener('click', function(){ runExport('mp4'); });
+  document.getElementById('btn-pngseq').addEventListener('click', function(){ runExport('png'); });
+})();
 </script>
 <script>
 /* ═══════════════════════════════════════════════════════
