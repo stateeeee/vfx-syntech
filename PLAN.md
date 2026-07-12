@@ -8,11 +8,12 @@
 > completo — **132 parametri totali** (Blob Tracker 34, Analog 24, Blob Reveal 14,
 > Bokeh 32, Anamorphic Lab 28), ognuno verificato con un round-trip set→changed.
 > Gemini pilota i controlli veri via bridge (pulsante Gemini AI dentro ogni effetto);
-> telemetria e cleanup attivi; three.js vendorizzato. **Fase 4 ✅ per il Blob Tracker**:
-> motore di export condiviso (`vendor/syntech-export.js`) — render offline frame-per-frame
-> con WebCodecs (H.264 80 Mbps, fallback VP9/AV1), MP4 muxato in-browser, audio AAC,
-> sequenza PNG lossless su cartella. Prossimo: estendere l'export agli altri 4 effetti
-> (stesso motore, wiring per-effetto) oppure **Fase 5** (porting + catena di effetti).
+> telemetria e cleanup attivi; three.js vendorizzato. **Fase 4 ✅ su tutti e 5 gli
+> effetti**: motore di export condiviso (`vendor/syntech-export.js`) — render offline
+> frame-per-frame con WebCodecs (H.264 80 Mbps, fallback VP9/AV1), MP4 muxato
+> in-browser, audio AAC, sequenza PNG lossless su cartella; pulsanti MASTER MP4 e
+> PNG SEQUENCE nella sezione Export di ogni effetto, tutti verificati end-to-end.
+> Prossimo: **Fase 5** (porting + catena di effetti) o Fase 6 (estetica finale, polish).
 
 ---
 
