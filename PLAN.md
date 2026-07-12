@@ -30,9 +30,16 @@
 > della home crea la catena (drag = link, click = apre l'effetto); la catena è
 > disegnata in oro con frecce di direzione, persiste in localStorage, e "Open
 > Chain Lab" la apre con i nodi collegati abilitati nell'ordine del grafo —
-> verificato end-to-end (7/7 check). Prossimi passi Fase 5: parità visiva più
-> profonda dei nodi (es. maschera MediaPipe nei nodi Bokeh/Blob Reveal, pannelli
-> 3D del tracker), audio-reactive nel motore nativo.
+> verificato end-to-end (7/7 check).
+> **Audio-reactive nativo ✅ (matrice §4.4)**: `AudioEngine` (mic → bande
+> bass/loud/treble + beat detection con envelope e stima BPM) e `ParamBus`
+> (valore finale = base manuale + amount × segnale × range, basi separate dalla
+> modulazione). Nel Chain Lab: pulsante AUDIO IN con meter live, e su ogni
+> parametro reactive un chip `~` che cicla off/bass/loud/treble/beat con slider
+> amount ±1 e readout modulato — verificato con WAV sintetico a 120 BPM come
+> mic finto (6/6 check). Prossimi passi Fase 5: parità visiva più profonda dei
+> nodi (maschera MediaPipe nei nodi Bokeh/Blob Reveal, pannelli 3D del tracker),
+> video-reactive nativo (motion → parametri), preset della catena.
 
 ---
 
