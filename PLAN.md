@@ -16,8 +16,11 @@
 > **Fase 5 MVP ✅**: SynEngine (`src/engine/`) — render graph nativo a singolo contesto
 > WebGL2, nodi AnalogNode e BlobTrackerNode portati, vista **Chain Lab** nel menu con
 > 2 effetti in serie (bypass, riordino, parametri live), verificata a livello di pixel.
-> Prossimi passi Fase 5: porting progressivo degli altri nodi a parità con gli
-> standalone, catena creata collegando i nodi del grafo-cervello, export dal motore.
+> Parità round 1 ✅: AnalogNode con pipeline completa (pixel sort multi-pass →
+> feedback persistente con zoom/rot/hue → CRT), BlobTrackerNode con FX dentro i blob
+> (invert, thermal, security, glitch) — tutto verificato al pixel. Prossimi passi
+> Fase 5: porting di Bokeh/Blob Reveal/Anamorphic come nodi, catena creata collegando
+> i nodi del grafo-cervello, export Master dal motore.
 
 ---
 
