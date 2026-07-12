@@ -3815,6 +3815,130 @@ requestAnimationFrame(syncSectionTitleGradients);
     try { window.parent.postMessage({ type: type, payload: payload || {} }, '*'); } catch(e) {}
   }
 
+  // Sliders are declared statically; knobs are discovered live from the DOM
+  // (every .knob[data-id] carries min/max/val/dec), so new knobs are exported
+  // automatically without touching the adapter.
+  var SLIDERS = [
+    { key:'bokehRadius',      id:'sl-bokehRadius',      label:'BOKEH RADIUS',     group:'BOKEH',      reactive:true,  hint:'Blur disc radius — overall depth-of-field strength' },
+    { key:'distortSwirl',     id:'sl-distortSwirl',     label:'SWIRL ANGLE',      group:'DISTORT',    reactive:true,  hint:'Max swirl angle (radians) of the post-blur distortion' },
+    { key:'distortFalloff',   id:'sl-distortFalloff',   label:'SWIRL FALLOFF',    group:'DISTORT',    reactive:false, hint:'How quickly the swirl fades from the centre' },
+    { key:'distortExplosive', id:'sl-distortExplosive', label:'EXPLOSIVE',        group:'DISTORT',    reactive:true,  hint:'Outward explosive distortion amount' },
+    { key:'distortSqueeze',   id:'sl-distortSqueeze',   label:'SQUEEZE',          group:'DISTORT',    reactive:false, hint:'Oval squeeze of the distortion field' },
+    { key:'anamSqueeze',      id:'sl-anamSqueeze',      label:'ANAM SQUEEZE',     group:'ANAMORPHIC', reactive:false, hint:'Horizontal anamorphic squeeze (1 = off, 2 = 2x)' },
+    { key:'anamRatio',        id:'sl-anamRatio',        label:'ASPECT RATIO',     group:'ANAMORPHIC', reactive:false, hint:'Target widescreen aspect ratio (1.78-2.80)' },
+    { key:'anamBarrel',       id:'sl-anamBarrel',       label:'BARREL',           group:'ANAMORPHIC', reactive:false, hint:'Lens barrel distortion' },
+    { key:'anamVignette',     id:'sl-anamVignette',     label:'ANAM VIGNETTE',    group:'ANAMORPHIC', reactive:false, hint:'Elliptical anamorphic lens vignette' }
+  ];
+  var TOGGLES = [
+    { key:'anamLetterbox', id:'tog-anamLetterbox', label:'LETTERBOX', group:'ANAMORPHIC', hint:'Crop to the target aspect ratio' },
+    { key:'anamBreathing', id:'tog-anamBreathing', label:'BREATHING', group:'ANAMORPHIC', hint:'Subtle lens-breathing zoom oscillation' }
+  ];
+  var KNOB_GROUPS = { bokeh:'BOKEH', anam:'ANAMORPHIC', dm:'DATAMOSH', lq:'LIQUID', lv:'LAVA', mr:'MOTION RIPPLE', ps:'PIXEL SORT' };
+  function knobGroup(key){
+    var prefixes = Object.keys(KNOB_GROUPS).sort(function(a, b){ return b.length - a.length; });
+    for (var i = 0; i < prefixes.length; i++) {
+      if (key.indexOf(prefixes[i]) === 0) return KNOB_GROUPS[prefixes[i]];
+    }
+    return 'FX';
+  }
+
+  function num(v){ var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+  function knobEls(){
+    var seen = {}, els = [];
+    document.querySelectorAll('.knob[data-id]').forEach(function(k){
+      if (seen[k.dataset.id]) return;
+      seen[k.dataset.id] = true;
+      els.push(k);
+    });
+    return els;
+  }
+
+  function buildSchema(){
+    var params = [];
+    SLIDERS.forEach(function(s){
+      var el = document.getElementById(s.id);
+      if (!el) return;
+      params.push({ key:s.key, label:s.label, type:'number',
+        min:num(el.min), max:num(el.max), step:num(el.step) || 1, value:num(el.value),
+        group:s.group, reactive:s.reactive, aiHint:s.hint || '' });
+    });
+    knobEls().forEach(function(k){
+      var key = k.dataset.id;
+      if (SLIDERS.some(function(s){ return s.key === key; })) return;
+      var dec = parseInt(k.dataset.dec || '2', 10);
+      var lblEl = (k.closest('.knob-group') || k).querySelector('.knob-lbl');
+      params.push({ key:key, label:(lblEl ? lblEl.textContent.trim().toUpperCase() : key.toUpperCase()),
+        type:'number', min:num(k.dataset.min), max:num(k.dataset.max),
+        step:Math.pow(10, -dec), value:num(k.dataset.val),
+        group:knobGroup(key), reactive:true, aiHint:'' });
+    });
+    TOGGLES.forEach(function(t){
+      var el = document.getElementById(t.id);
+      if (!el) return;
+      params.push({ key:t.key, label:t.label, type:'boolean', value:el.classList.contains('on'),
+        group:t.group, reactive:false, aiHint:t.hint || '' });
+    });
+    return params;
+  }
+
+  function setParam(key, value){
+    var t = TOGGLES.find(function(x){ return x.key === key; });
+    if (t) {
+      var btn = document.getElementById(t.id);
+      if (!btn) return false;
+      var want = value === true || value === 1 || value === '1' || value === 'true';
+      if (btn.classList.contains('on') !== want) btn.click();
+      return true;
+    }
+    var s = SLIDERS.find(function(x){ return x.key === key; });
+    if (s) {
+      var el = document.getElementById(s.id);
+      if (!el) return false;
+      var v = Number(value);
+      if (isNaN(v)) return false;
+      var mn = parseFloat(el.min), mx = parseFloat(el.max);
+      if (!isNaN(mn)) v = Math.max(mn, v);
+      if (!isNaN(mx)) v = Math.min(mx, v);
+      el.value = String(v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    var k = document.querySelector('.knob[data-id="' + key + '"]');
+    if (k && typeof syncKnob === 'function') {
+      var kv = Number(value);
+      if (isNaN(kv)) return false;
+      kv = Math.max(num(k.dataset.min), Math.min(num(k.dataset.max), kv));
+      syncKnob(key, kv);
+      if (typeof updateParam === 'function') updateParam(key, kv);
+      return true;
+    }
+    return false;
+  }
+
+  function notifyChanged(key, value){
+    post('syntech:param:changed', { key: key, value: value });
+  }
+
+  // Knob turns route through the effect's own updateParam: wrap it so the
+  // shell hears about every change, no matter which control produced it
+  try {
+    if (typeof updateParam === 'function') {
+      var _origUpdate = updateParam;
+      updateParam = function(id, val){ _origUpdate(id, val); notifyChanged(id, val); };
+    }
+  } catch(e) {}
+  SLIDERS.forEach(function(s){
+    var el = document.getElementById(s.id);
+    if (el) el.addEventListener('input', function(){ notifyChanged(s.key, num(el.value)); });
+  });
+  TOGGLES.forEach(function(t){
+    var el = document.getElementById(t.id);
+    if (el) el.addEventListener('click', function(){
+      setTimeout(function(){ notifyChanged(t.key, el.classList.contains('on')); }, 0);
+    });
+  });
+
   function readFps(){
     var el = document.getElementById('fps-val');
     var n = el ? parseInt(el.textContent, 10) : 0;
@@ -3833,7 +3957,7 @@ requestAnimationFrame(syncSectionTitleGradients);
   }
 
   function announce(){
-    post('syntech:ready', { effectId: 'bokeh', version: '0.1.0', params: [] });
+    post('syntech:ready', { effectId: 'bokeh', version: '0.2.0', params: buildSchema() });
   }
   if (document.readyState === 'complete') announce();
   else window.addEventListener('load', announce);
@@ -3842,10 +3966,22 @@ requestAnimationFrame(syncSectionTitleGradients);
     post('syntech:state', { fps: readFps(), srcMode: readSrc(), recording: readRec() });
   }, 1000);
 
-  // Shell is about to tear the iframe down: release every live resource
   window.addEventListener('message', function(ev){
     var d = ev && ev.data;
-    if (!d || d.type !== 'syntech:close') return;
+    if (!d || !d.type) return;
+    if (d.type === 'syntech:param:set' && d.payload) {
+      setParam(d.payload.key, d.payload.value);
+      return;
+    }
+    if (d.type === 'syntech:preset:apply' && d.payload && d.payload.params) {
+      Object.keys(d.payload.params).forEach(function(k){
+        setParam(k, d.payload.params[k]);
+      });
+      return;
+    }
+    if (d.type !== 'syntech:close') return;
+
+    // Shell is about to tear the iframe down: release every live resource
     try { if (mediaRec && mediaRec.state === 'recording') mediaRec.stop(); } catch(e) {}
     try { stopWebcam(); } catch(e) {}
     try {
