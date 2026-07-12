@@ -1736,6 +1736,85 @@ initSeg();
     try { window.parent.postMessage({ type: type, payload: payload || {} }, '*'); } catch(e) {}
   }
 
+  var SLIDERS = [
+    { key:'segThreshold', id:'sl-thr',      label:'SEG THRESHOLD',     group:'SEGMENTATION',  reactive:true,  hint:'Person segmentation mask threshold; lower keeps more of the person' },
+    { key:'segEveryN',    id:'sl-segn',     label:'SEG EVERY N FRAMES',group:'SEGMENTATION',  reactive:false, hint:'Run segmentation every N frames (higher = faster but choppier)' },
+    { key:'erode',        id:'sl-erode',    label:'ERODE',             group:'MASK',          reactive:true,  hint:'Shrinks the mask edge inward by N pixels' },
+    { key:'dilate',       id:'sl-dil',      label:'DILATE',            group:'MASK',          reactive:true,  hint:'Expands the mask edge outward by N pixels' },
+    { key:'feather',      id:'sl-feather',  label:'FEATHER',           group:'MASK',          reactive:true,  hint:'Softens/blurs the mask edge' },
+    { key:'opacity',      id:'sl-opacity',  label:'REVEAL OPACITY',    group:'MASK',          reactive:true,  hint:'Opacity percentage of the revealed layer' },
+    { key:'lumThreshold', id:'sl-lum',      label:'LUMA THRESHOLD',    group:'BLOB',          reactive:true,  hint:'Luma threshold (0-255) for blob detection' },
+    { key:'minArea',      id:'sl-minarea',  label:'MIN BLOB AREA',     group:'BLOB',          reactive:false, hint:'Minimum blob area in pixels' },
+    { key:'maxBlobs',     id:'sl-maxblobs', label:'MAX BLOBS',         group:'BLOB',          reactive:false, hint:'Maximum number of tracked blobs' },
+    { key:'audioExpand',  id:'sl-audioexp', label:'AUDIO EXPAND',      group:'AUDIO REACTIVE',reactive:true,  hint:'How much loudness expands the reveal mask' },
+    { key:'beatSens',     id:'sl-bsens',    label:'BEAT SENSITIVITY',  group:'AUDIO REACTIVE',reactive:false, hint:'Beat detection sensitivity' },
+    { key:'beatGap',      id:'sl-bgap',     label:'BEAT GAP',          group:'AUDIO REACTIVE',reactive:false, hint:'Minimum seconds between detected beats' }
+  ];
+  var TOGGLES = [
+    { key:'segEnabled', id:'btn-seg',   label:'SEGMENTATION ON', group:'SEGMENTATION', hint:'Enable person segmentation (rotoscope mask)' },
+    { key:'modelHQ',    id:'btn-model', label:'HQ MODEL',        group:'SEGMENTATION', hint:'Use the high-quality segmentation model (slower)' }
+  ];
+
+  function num(v){ var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+  function buildSchema(){
+    var params = [];
+    SLIDERS.forEach(function(s){
+      var el = document.getElementById(s.id);
+      if (!el) return;
+      params.push({ key:s.key, label:s.label, type:'number',
+        min:num(el.min), max:num(el.max), step:num(el.step) || 1, value:num(el.value),
+        group:s.group, reactive:s.reactive, aiHint:s.hint || '' });
+    });
+    TOGGLES.forEach(function(t){
+      var el = document.getElementById(t.id);
+      if (!el) return;
+      params.push({ key:t.key, label:t.label, type:'boolean', value:el.classList.contains('on'),
+        group:t.group, reactive:false, aiHint:t.hint || '' });
+    });
+    return params;
+  }
+
+  function setParam(key, value){
+    var s = SLIDERS.find(function(x){ return x.key === key; });
+    if (s) {
+      var el = document.getElementById(s.id);
+      if (!el) return false;
+      var v = Number(value);
+      if (isNaN(v)) return false;
+      var mn = parseFloat(el.min), mx = parseFloat(el.max);
+      if (!isNaN(mn)) v = Math.max(mn, v);
+      if (!isNaN(mx)) v = Math.min(mx, v);
+      el.value = String(v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    var t = TOGGLES.find(function(x){ return x.key === key; });
+    if (t) {
+      var btn = document.getElementById(t.id);
+      if (!btn) return false;
+      var want = value === true || value === 1 || value === '1' || value === 'true';
+      if (btn.classList.contains('on') !== want) btn.click();
+      return true;
+    }
+    return false;
+  }
+
+  SLIDERS.forEach(function(s){
+    var el = document.getElementById(s.id);
+    if (el) el.addEventListener('input', function(){
+      post('syntech:param:changed', { key: s.key, value: num(el.value) });
+    });
+  });
+  TOGGLES.forEach(function(t){
+    var el = document.getElementById(t.id);
+    if (el) el.addEventListener('click', function(){
+      setTimeout(function(){
+        post('syntech:param:changed', { key: t.key, value: el.classList.contains('on') });
+      }, 0);
+    });
+  });
+
   function readFps(){
     var el = document.getElementById('fps-val');
     var n = el ? parseInt(el.textContent, 10) : 0;
@@ -1753,7 +1832,7 @@ initSeg();
   }
 
   function announce(){
-    post('syntech:ready', { effectId: 'blob_reveal', version: '0.1.0', params: [] });
+    post('syntech:ready', { effectId: 'blob_reveal', version: '0.2.0', params: buildSchema() });
   }
   if (document.readyState === 'complete') announce();
   else window.addEventListener('load', announce);
@@ -1762,10 +1841,22 @@ initSeg();
     post('syntech:state', { fps: readFps(), srcMode: readSrc(), recording: readRec() });
   }, 1000);
 
-  // Shell is about to tear the iframe down: release every live resource
   window.addEventListener('message', function(ev){
     var d = ev && ev.data;
-    if (!d || d.type !== 'syntech:close') return;
+    if (!d || !d.type) return;
+    if (d.type === 'syntech:param:set' && d.payload) {
+      setParam(d.payload.key, d.payload.value);
+      return;
+    }
+    if (d.type === 'syntech:preset:apply' && d.payload && d.payload.params) {
+      Object.keys(d.payload.params).forEach(function(k){
+        setParam(k, d.payload.params[k]);
+      });
+      return;
+    }
+    if (d.type !== 'syntech:close') return;
+
+    // Shell is about to tear the iframe down: release every live resource
     try { if (mediaRec && mediaRec.state === 'recording') mediaRec.stop(); } catch(e) {}
     try { stopMic(); } catch(e) {}
     try { if (animId) cancelAnimationFrame(animId); } catch(e) {}
