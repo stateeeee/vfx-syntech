@@ -170,6 +170,38 @@ export default function VfxCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // design tokens (phase 6 / decision #3): the canvas-drawn graph follows
+    // --syn-* just like the DOM, so a re-skin recolors it with no code change
+    const hexToRgbStr = (hex: string): string => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+      if (!m) return '212, 175, 55';
+      const n = parseInt(m[1], 16);
+      return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    };
+    let ACCENT = '#D4AF37';
+    let ACCENT_RGB = '212, 175, 55';
+    let ACCENT_DIM = '#8a6e2f';
+    let ACCENT_DIM_RGB = '138, 110, 47';
+    let ACCENT_DEEP = '#513d1e';
+    let ACCENT_NIGHT = '#2c200e';
+    let BG = '#050505';
+    const readTokens = (): boolean => {
+      const cs = getComputedStyle(document.documentElement);
+      const g = (n: string, fb: string) => cs.getPropertyValue(n).trim() || fb;
+      const prev = ACCENT;
+      ACCENT = g('--syn-accent', ACCENT);
+      ACCENT_RGB = hexToRgbStr(ACCENT);
+      ACCENT_DIM = g('--syn-accent-700', ACCENT_DIM);
+      ACCENT_DIM_RGB = hexToRgbStr(ACCENT_DIM);
+      ACCENT_DEEP = g('--syn-accent-900', ACCENT_DEEP);
+      ACCENT_NIGHT = g('--syn-accent-950', ACCENT_NIGHT);
+      BG = g('--syn-bg', BG);
+      return ACCENT !== prev;
+    };
+    readTokens();
+    const ga = (a: number) => `rgba(${ACCENT_RGB}, ${a})`;
+    const gd = (a: number) => `rgba(${ACCENT_DIM_RGB}, ${a})`;
+
     let width = canvas.width;
     let height = canvas.height;
 
@@ -218,11 +250,11 @@ export default function VfxCanvas({
 
       // Define our 5 main Hubs (representing active modules in the network)
       const hubsConfig: { id: ModuleId; label: string; angle: number; dist: number; color: string; glow: string }[] = [
-        { id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125, color: '#ffffff', glow: '#D4AF37' },
-        { id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110, color: '#ffffff', glow: '#D4AF37' },
+        { id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120, color: '#ffffff', glow: ACCENT },
+        { id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130, color: '#ffffff', glow: ACCENT },
+        { id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140, color: '#ffffff', glow: ACCENT },
+        { id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125, color: '#ffffff', glow: ACCENT },
+        { id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110, color: '#ffffff', glow: ACCENT },
       ];
 
       // Add central master core node representing the root index.md / Obsidian Vault main core
@@ -239,7 +271,7 @@ export default function VfxCanvas({
         size: 9,
         baseSize: 9,
         color: '#ffffff',
-        glow: '#D4AF37',
+        glow: ACCENT,
         pulseSpeed: 0.02,
         pulsePhase: 0,
       });
@@ -272,8 +304,8 @@ export default function VfxCanvas({
         edges.push({
           source: coreIdx,
           target: hubIdx,
-          activeColor: 'rgba(212, 175, 55, 0.45)',
-          inactiveColor: 'rgba(212, 175, 55, 0.15)',
+          activeColor: ga(0.45),
+          inactiveColor: ga(0.15),
         });
 
         // Generate satellite clusters branching out from this hub
@@ -287,7 +319,7 @@ export default function VfxCanvas({
 
           // Color palette containing Obsidian neon gold, warm amber, soft grey, and white sparkles
           const isGoldSpark = Math.random() > 0.4;
-          const nodeColor = isGoldSpark ? '#D4AF37' : '#8a6e2f';
+          const nodeColor = isGoldSpark ? ACCENT : ACCENT_DIM;
           const sizeVal = 1.8 + Math.random() * 2.2;
 
           nodes.push({
@@ -301,7 +333,7 @@ export default function VfxCanvas({
             size: sizeVal,
             baseSize: sizeVal,
             color: nodeColor,
-            glow: isGoldSpark ? '#D4AF37' : 'rgba(212, 175, 55, 0.2)',
+            glow: isGoldSpark ? ACCENT : ga(0.2),
             pulseSpeed: 0.01 + Math.random() * 0.02,
             pulsePhase: Math.random() * Math.PI * 2,
           });
@@ -310,8 +342,8 @@ export default function VfxCanvas({
           edges.push({
             source: hubIdx,
             target: satIdx,
-            activeColor: 'rgba(212, 175, 55, 0.35)',
-            inactiveColor: 'rgba(212, 175, 55, 0.08)',
+            activeColor: ga(0.35),
+            inactiveColor: ga(0.08),
           });
 
           // Occasional cross-connections between sibling satellites to form organic cluster mesh
@@ -319,8 +351,8 @@ export default function VfxCanvas({
             edges.push({
               source: satIdx,
               target: satIdx - 1,
-              activeColor: 'rgba(212, 175, 55, 0.25)',
-              inactiveColor: 'rgba(212, 175, 55, 0.04)',
+              activeColor: ga(0.25),
+              inactiveColor: ga(0.04),
             });
           }
         }
@@ -341,8 +373,8 @@ export default function VfxCanvas({
           targetY: ry,
           size: 1.2 + Math.random() * 1.5,
           baseSize: 1.2 + Math.random() * 1.5,
-          color: '#513d1e',
-          glow: 'rgba(212, 175, 55, 0.08)',
+          color: ACCENT_DEEP,
+          glow: ga(0.08),
           pulseSpeed: 0.01,
           pulsePhase: Math.random() * Math.PI,
         });
@@ -361,13 +393,18 @@ export default function VfxCanvas({
       const w = canvas.width / window.devicePixelRatio;
       const h = canvas.height / window.devicePixelRatio;
 
+      // live re-skin: when the accent token changes, rebuild stored node colors
+      if (frameCount % 60 === 0 && readTokens()) {
+        initializeGraph(w, h);
+      }
+
       // Recalibrate node targets dynamically if viewport dimensions change dramatically
       if (nodes.length > 0 && Math.abs(nodes[0].targetX - w / 2) > 5) {
         initializeGraph(w, h);
       }
 
       // Clear with absolute deep pitch obsidian background or clean light warm cream background
-      ctx.fillStyle = isDayMode ? '#fbfaf7' : '#050505';
+      ctx.fillStyle = isDayMode ? '#fbfaf7' : BG;
       ctx.fillRect(0, 0, w, h);
 
       // Render fine tech grid background to reinforce system blueprints
@@ -389,7 +426,7 @@ export default function VfxCanvas({
 
       // Check if engine is online
       if (!isStreaming) {
-        ctx.fillStyle = isDayMode ? 'rgba(212, 175, 55, 0.05)' : 'rgba(212, 175, 55, 0.02)';
+        ctx.fillStyle = isDayMode ? ga(0.05) : ga(0.02);
         for (let i = 0; i < 5; i++) {
           const rh = Math.random() * 3 + 1;
           const ry = Math.random() * h;
@@ -397,14 +434,14 @@ export default function VfxCanvas({
         }
 
         ctx.font = '9px var(--font-mono)';
-        ctx.fillStyle = isDayMode ? '#8a6e33' : '#513d1e';
+        ctx.fillStyle = isDayMode ? '#8a6e33' : ACCENT_DEEP;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('ENGINE STANDBY // CONSTALLATION GRAPH SLEEPING', w / 2, h / 2 - 15);
         ctx.fillText('CLICK "INITIALIZE STREAM" TO ACTIVATE OBSIDIAN CHANNELS', w / 2, h / 2 + 5);
 
         // Standby scoping baseline
-        ctx.strokeStyle = isDayMode ? '#c8baa0' : '#2c200e';
+        ctx.strokeStyle = isDayMode ? '#c8baa0' : ACCENT_NIGHT;
         ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(30, h / 2);
@@ -640,15 +677,15 @@ export default function VfxCanvas({
 
         if (isActiveFilament) {
           // Glow filaments bright gold on active module selection
-          ctx.strokeStyle = isDayMode ? 'rgba(180, 140, 45, 0.75)' : 'rgba(212, 175, 55, 0.55)';
+          ctx.strokeStyle = isDayMode ? 'rgba(180, 140, 45, 0.75)' : ga(0.55);
           ctx.lineWidth = 1.0 + (amplitudeFactor * 0.6);
         } else if (filamentHubId) {
           // Other 4 modules have their connections beautifully visible with standard gold filaments
-          ctx.strokeStyle = isDayMode ? 'rgba(180, 140, 45, 0.28)' : 'rgba(212, 175, 55, 0.18)';
+          ctx.strokeStyle = isDayMode ? 'rgba(180, 140, 45, 0.28)' : ga(0.18);
           ctx.lineWidth = 0.65;
         } else {
           // Extremely faint obsidian web structure otherwise
-          ctx.strokeStyle = isDayMode ? 'rgba(138, 110, 47, 0.12)' : 'rgba(138, 110, 47, 0.06)';
+          ctx.strokeStyle = isDayMode ? gd(0.12) : gd(0.06);
           ctx.lineWidth = 0.45;
         }
         ctx.stroke();
@@ -672,7 +709,7 @@ export default function VfxCanvas({
           const alpha = Math.sin(travelProg * Math.PI) * 0.5; // Smooth subtle glow
           ctx.beginPath();
           ctx.arc(px, py, 0.85, 0, Math.PI * 2);
-          ctx.fillStyle = isDayMode ? `rgba(180, 100, 20, ${alpha})` : `rgba(212, 175, 55, ${alpha})`;
+          ctx.fillStyle = isDayMode ? `rgba(180, 100, 20, ${alpha})` : ga(alpha);
           ctx.fill();
         }
       });
@@ -702,7 +739,7 @@ export default function VfxCanvas({
         // Draw outer ring/halo circle
         ctx.strokeStyle = p.type === 'core_to_hub' 
           ? (isDayMode ? `rgba(180, 100, 20, ${outerAlpha})` : `rgba(255, 255, 255, ${outerAlpha})`)
-          : `rgba(212, 175, 55, ${outerAlpha})`;
+          : ga(outerAlpha);
         ctx.lineWidth = p.type === 'core_to_hub' ? 1.0 : 0.75;
         ctx.beginPath();
         ctx.arc(px, py, p.type === 'core_to_hub' ? 4.5 : 3.0, 0, Math.PI * 2);
@@ -725,9 +762,9 @@ export default function VfxCanvas({
         const b = nodes.find((n) => n.moduleId === chainIds[ci + 1]);
         if (!a || !b) continue;
         ctx.save();
-        ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.9)' : 'rgba(212, 175, 55, 0.9)';
+        ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.9)' : ga(0.9);
         ctx.lineWidth = 1.8;
-        ctx.shadowColor = '#D4AF37';
+        ctx.shadowColor = ACCENT;
         ctx.shadowBlur = 6;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -738,7 +775,7 @@ export default function VfxCanvas({
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
         const axp = a.x + (b.x - a.x) * 0.62;
         const ayp = a.y + (b.y - a.y) * 0.62;
-        ctx.fillStyle = isDayMode ? '#a07614' : '#D4AF37';
+        ctx.fillStyle = isDayMode ? '#a07614' : ACCENT;
         ctx.beginPath();
         ctx.moveTo(axp + Math.cos(ang) * 6, ayp + Math.sin(ang) * 6);
         ctx.lineTo(axp + Math.cos(ang + 2.5) * 5, ayp + Math.sin(ang + 2.5) * 5);
@@ -760,7 +797,7 @@ export default function VfxCanvas({
         const fromNode = nodes[dragFromRef.current];
         if (fromNode) {
           ctx.save();
-          ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.85)' : 'rgba(212, 175, 55, 0.85)';
+          ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.85)' : ga(0.85);
           ctx.lineWidth = 1.4;
           ctx.setLineDash([6, 5]);
           ctx.beginPath();
@@ -807,7 +844,7 @@ export default function VfxCanvas({
           // Central Core Nebula Glow with heartbeat pulse
           const glowSize = 22 + (amplitudeFactor * 15) + (coreSwell * 18);
           const nebGrad = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, glowSize);
-          nebGrad.addColorStop(0, `rgba(212, 175, 55, ${0.15 + coreSwell * 0.35})`);
+          nebGrad.addColorStop(0, ga(0.15 + coreSwell * 0.35));
           nebGrad.addColorStop(1, isDayMode ? 'rgba(251, 250, 247, 0)' : 'rgba(5, 5, 5, 0)');
           ctx.fillStyle = nebGrad;
           ctx.beginPath();
@@ -828,7 +865,7 @@ export default function VfxCanvas({
           const hubGrad = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, glowRad);
           hubGrad.addColorStop(0, isSelectedActive 
             ? (isDayMode ? `rgba(180, 140, 45, ${0.45 + flash * 0.35})` : `rgba(255, 255, 255, ${0.45 + flash * 0.35})`)
-            : `rgba(212, 175, 55, ${0.15 + flash * 0.55})`
+            : ga(0.15 + flash * 0.55)
           );
           hubGrad.addColorStop(1, isDayMode ? 'rgba(251, 250, 247, 0)' : 'rgba(5, 5, 5, 0)');
           
@@ -838,7 +875,7 @@ export default function VfxCanvas({
           ctx.fill();
 
           // Outer reticle halo rings around Hubs (flashes white on pulse arrival)
-          ctx.strokeStyle = (isSelectedActive || flash > 0.15) ? (isDayMode ? '#7a6538' : '#ffffff') : 'rgba(212, 175, 55, 0.25)';
+          ctx.strokeStyle = (isSelectedActive || flash > 0.15) ? (isDayMode ? '#7a6538' : '#ffffff') : ga(0.25);
           ctx.lineWidth = isSelectedActive ? 0.9 : 0.45 + (flash * 0.6);
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize + 4 + Math.sin(frameCount * 0.05 + i) * 1.5, 0, Math.PI * 2);
@@ -853,7 +890,7 @@ export default function VfxCanvas({
         } else if (isHub) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize, 0, Math.PI * 2);
-          ctx.fillStyle = (isSelectedActive || flash > 0.4) ? (isDayMode ? '#5e4e2b' : '#ffffff') : '#D4AF37';
+          ctx.fillStyle = (isSelectedActive || flash > 0.4) ? (isDayMode ? '#5e4e2b' : '#ffffff') : ACCENT;
           ctx.fill();
         } else {
           // Satellite subnodes - Continuous smooth alpha-blended transition for energy flash (no branch popping!)
@@ -866,7 +903,7 @@ export default function VfxCanvas({
             const glowSize = drawSize + flash * 5.0;
             ctx.beginPath();
             ctx.arc(node.x, node.y, glowSize, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(212, 175, 55, ${flash * 0.65})`;
+            ctx.fillStyle = ga(flash * 0.65);
             ctx.fill();
 
             // 2. Draw standard base color dot
@@ -903,7 +940,7 @@ export default function VfxCanvas({
             // Layout placement parameters
             const labelYOffset = isCore ? -16 : 14;
             ctx.font = isCore ? 'bold 10px var(--font-mono)' : 'bold 9px var(--font-mono)';
-            ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#000000' : '#ffffff') : '#D4AF37';
+            ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#000000' : '#ffffff') : ACCENT;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
@@ -913,7 +950,7 @@ export default function VfxCanvas({
 
             // Draw clean background pill container
             ctx.fillStyle = isDayMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(5, 5, 5, 0.85)';
-            ctx.strokeStyle = isSelectedActive || isCore ? '#D4AF37' : 'rgba(212, 175, 55, 0.4)';
+            ctx.strokeStyle = isSelectedActive || isCore ? ACCENT : ga(0.4);
             ctx.lineWidth = 0.8;
             
             const rx = node.x - textWidth / 2 - padX;
@@ -927,7 +964,7 @@ export default function VfxCanvas({
             ctx.stroke();
 
             // Text print
-            ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#222222' : '#ffffff') : (isDayMode ? '#7a6538' : '#D4AF37');
+            ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#222222' : '#ffffff') : (isDayMode ? '#7a6538' : ACCENT);
             ctx.fillText(node.label, node.x, node.y + labelYOffset);
           }
         }
@@ -950,7 +987,7 @@ export default function VfxCanvas({
 
   return (
     <div
-      className="relative w-full h-full min-h-[300px] border border-gold-800/40 bg-[#050505] overflow-hidden rounded-md gold-glow-border"
+      className="relative w-full h-full min-h-[300px] border border-gold-800/40 bg-[var(--syn-bg)] overflow-hidden rounded-md gold-glow-border"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}

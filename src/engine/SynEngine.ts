@@ -132,6 +132,15 @@ export class SynEngine {
   /** set by the host when a person-segmentation mask is available */
   personMaskSource: TexImageSource | null = null;
 
+  /* ── adaptive internal resolution (PLAN §6.4): when the frame rate
+        falls under budget the render size steps down, display size
+        stays the same. Disabled + forced to 1 during offline export. ── */
+  resScale = 1;
+  adaptiveRes = true;
+  onResScale?: (scale: number) => void;
+  private static readonly RES_STEPS = [1, 0.75, 0.5];
+  private lastResEval = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     // preserveDrawingBuffer: frame stays readable after present — needed for
@@ -218,11 +227,30 @@ export class SynEngine {
   private fitToSource(): void {
     const v = this.sourceEl;
     if (!v) return;
-    const w = v.videoWidth || 1280;
-    const h = v.videoHeight || 720;
+    const w = Math.max(2, Math.round((v.videoWidth || 1280) * this.resScale));
+    const h = Math.max(2, Math.round((v.videoHeight || 720) * this.resScale));
     this.canvas.width = w;
     this.canvas.height = h;
     this.chain.forEach((n) => n.resize(w, h));
+  }
+
+  /** set the internal render scale (1 = native source resolution) */
+  setResScale(scale: number): void {
+    if (scale === this.resScale) return;
+    this.resScale = scale;
+    this.fitToSource();
+    this.onResScale?.(scale);
+  }
+
+  /** step the scale down when under budget, back up when comfortably over */
+  private evalAdaptiveRes(now: number): void {
+    if (!this.adaptiveRes || !this.sourceEl) return;
+    if (now - this.lastResEval < 1500) return;
+    this.lastResEval = now;
+    const steps = SynEngine.RES_STEPS;
+    const i = steps.indexOf(this.resScale);
+    if (this.fps > 0 && this.fps < 45 && i < steps.length - 1) this.setResScale(steps[i + 1]);
+    else if (this.fps > 57 && i > 0) this.setResScale(steps[i - 1]);
   }
 
   addNode(node: EngineNode): void {
@@ -244,6 +272,9 @@ export class SynEngine {
     const tick = (now: number) => {
       this.rafId = requestAnimationFrame(tick);
       this.renderFrame(now);
+      // only the live loop adapts — manual renderFrame calls (offline
+      // export) must never change the render size mid-encode
+      this.evalAdaptiveRes(now);
     };
     this.rafId = requestAnimationFrame(tick);
   }

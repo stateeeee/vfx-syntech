@@ -32,16 +32,46 @@ import AiOracleDrawer from './components/AiOracleDrawer';
 import EffectHost from './components/EffectHost';
 import ChainLab from './components/ChainLab';
 
+// explicit session snapshot for the SAVE nav action (decision #9: localStorage)
+const SESSION_KEY = 'syntech.session';
+interface SavedSession { activeModule?: ModuleId; isDayMode?: boolean; savedAt?: number }
+const readSession = (): SavedSession => {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
+};
+
 export default function App() {
   // App initialization & Stream engine active state
   const [isStreaming, setIsStreaming] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('PARAMETERS');
-  const [activeModule, setActiveModule] = useState<ModuleId>('blob_tracker');
+  const [activeModule, setActiveModule] = useState<ModuleId>(() => {
+    const saved = readSession().activeModule;
+    return saved && saved in EFFECTS_REGISTRY ? saved : 'blob_tracker';
+  });
   const [signalSource, setSignalSource] = useState<SignalSource>('L_INPUT_CHANNEL_01');
   const [bufferSize, setBufferSize] = useState<number>(8192);
   const [globalSyncLocked, setGlobalSyncLocked] = useState(true);
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
-  const [isDayMode, setIsDayMode] = useState(false);
+  const [isDayMode, setIsDayMode] = useState(() => !!readSession().isDayMode);
+
+  // SAVE / PROJECTS nav actions (phase 6: placeholders become minimal features)
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [chainPresetToOpen, setChainPresetToOpen] = useState<string | null>(null);
+  const handleSaveSession = () => {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ activeModule, isDayMode, savedAt: Date.now() }));
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1800);
+    } catch { /* private mode */ }
+  };
+  const savedChains = (): Array<{ name: string; savedAt: number; enabled: string[] }> => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('syntech.chainPresets') ?? '[]');
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      return [];
+    }
+  };
 
   // Real effect currently open full-terminal (null = dashboard/home view)
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
@@ -432,18 +462,83 @@ export default function App() {
             >
               Chain Lab
             </li>
-            <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Save</li>
-            <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Projects</li>
-            <li className={`cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}>Contact</li>
+            <li
+              data-testid="nav-save"
+              className={savedFlash ? 'text-gold-500 cursor-default' : `cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}
+              onClick={handleSaveSession}
+              title="Save the current session (module, theme) to this browser"
+            >
+              {savedFlash ? '✓ Saved' : 'Save'}
+            </li>
+            <li
+              data-testid="nav-projects"
+              className={projectsOpen ? 'text-gold-500 cursor-default' : `cursor-pointer transition-colors ${isDayMode ? 'hover:text-black' : 'hover:text-white'}`}
+              onClick={() => setProjectsOpen(true)}
+              title="Saved effect chains"
+            >
+              Projects
+            </li>
           </ul>
         </nav>
+
+        {/* PROJECTS — the chains saved from the Chain Lab, openable in place */}
+        {projectsOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+            data-testid="projects-modal"
+            onClick={() => setProjectsOpen(false)}
+          >
+            <div
+              className={`w-full max-w-md mx-4 rounded border p-5 space-y-3 ${isDayMode ? 'bg-[#fcfbf9] border-gold-500/40 text-neutral-900' : 'bg-[#0a0a0a] border-gold-500/30 text-white'}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[11px] font-extrabold tracking-[0.25em] text-gold-500 uppercase">Projects — Saved chains</span>
+                <button
+                  onClick={() => setProjectsOpen(false)}
+                  className="font-mono text-[11px] text-neutral-500 hover:text-gold-500 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              {savedChains().length === 0 ? (
+                <p className={`font-mono text-[10px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-400'}`}>
+                  No saved chains yet. Build one in the Chain Lab (or by linking nodes on the
+                  brain graph) and save it as a preset — it will appear here.
+                </p>
+              ) : (
+                savedChains().map((p) => (
+                  <button
+                    key={p.name}
+                    data-testid={`project-open-${p.name}`}
+                    onClick={() => {
+                      setProjectsOpen(false);
+                      handleEffectClose();
+                      setChainPresetToOpen(p.name);
+                      setChainOpen(true);
+                    }}
+                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded border font-mono text-[10px] cursor-pointer transition-colors ${
+                      isDayMode ? 'border-neutral-200 hover:border-gold-500/60 bg-white' : 'border-white/10 hover:border-gold-500/60 bg-black/40'
+                    }`}
+                  >
+                    <span className="font-bold truncate">{p.name}</span>
+                    <span className="text-neutral-500 uppercase text-[9px] truncate">
+                      {(p.enabled ?? []).map((id) => id.replace(/_/g, ' ')).join(' → ') || 'empty'}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* MAIN BODY: chain lab, full-terminal effect view, or the dashboard grid */}
         {chainOpen ? (
           <ChainLab
             isDayMode={isDayMode}
-            onBack={() => setChainOpen(false)}
+            onBack={() => { setChainOpen(false); setChainPresetToOpen(null); }}
             initialChain={graphChain.length >= 2 ? graphChain : undefined}
+            initialPreset={chainPresetToOpen ?? undefined}
           />
         ) : openEffectId && EFFECTS_REGISTRY[openEffectId].iframeSrc ? (
           <EffectHost

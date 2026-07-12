@@ -17,6 +17,8 @@ interface ChainLabProps {
    * are still added to the rack, just bypassed.
    */
   initialChain?: ModuleId[];
+  /** name of a saved chain preset to load on mount (Projects nav) */
+  initialPreset?: string;
 }
 
 // default rack order: trackers first, lens/grade passes last
@@ -49,7 +51,7 @@ const readPresets = (): ChainPreset[] => {
  * one WebGL context, all five effects composed in series on the same
  * frame. This is the capability the iframe architecture cannot provide.
  */
-export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabProps) {
+export default function ChainLab({ isDayMode, onBack, initialChain, initialPreset }: ChainLabProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const engineRef = useRef<SynEngine | null>(null);
@@ -63,6 +65,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
   if (!busRef.current) busRef.current = new ParamBus();
   const [segState, setSegState] = useState<PersonMaskState>('off');
   const [fps, setFps] = useState(0);
+  const [resPct, setResPct] = useState(100);
   const [sourceKind, setSourceKind] = useState<'none' | 'video' | 'webcam'>('none');
   const [error, setError] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
@@ -92,6 +95,11 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
     // manual/auto control matrix (PLAN §4.4): bases live in the bus, audio
     // and video signal offsets are layered on top at the start of every frame
     busRef.current!.snapshot(engine.chain);
+    // opened from the Projects nav: restore the requested saved chain
+    if (initialPreset) {
+      const p = readPresets().find((x) => x.name === initialPreset);
+      if (p) applyPresetTo(engine, p);
+    }
     engine.beforeFrame = (now) => {
       const lv = audioRef.current!.tick(now);
       const va = videoAnRef.current!;
@@ -108,6 +116,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       });
     };
     engine.onFps = setFps;
+    engine.onResScale = (s) => setResPct(Math.round(s * 100));
     engine.start();
     engineRef.current = engine;
     return () => {
@@ -172,9 +181,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
     setPresetName('');
   };
 
-  const loadPreset = (preset: ChainPreset) => {
-    const engine = engineRef.current;
-    if (!engine) return;
+  const applyPresetTo = (engine: SynEngine, preset: ChainPreset) => {
     const byId = new Map(engine.chain.map((n) => [n.id, n]));
     const ordered: EngineNode[] = [];
     preset.order.forEach((id) => {
@@ -189,6 +196,11 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       engine.chain.find((n) => n.id === k.slice(0, dot))?.setParam(k.slice(dot + 1), v);
     });
     busRef.current!.restore(preset.bus, engine.chain);
+  };
+
+  const loadPreset = (preset: ChainPreset) => {
+    if (!engineRef.current) return;
+    applyPresetTo(engineRef.current, preset);
     bump();
   };
 
@@ -329,6 +341,10 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
 
       engine.stop();
       video.pause();
+      // master export always renders at native resolution (§6.4)
+      const prevAdaptive = engine.adaptiveRes;
+      engine.adaptiveRes = false;
+      engine.setResScale(1);
       const t0 = video.currentTime;
       let clock = performance.now();
       try {
@@ -353,6 +369,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
           video.currentTime = t0;
         });
         void video.play().catch(() => {});
+        engine.adaptiveRes = prevAdaptive;
         engine.start();
       }
     } catch (e) {
@@ -419,7 +436,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
                   data-testid={`param-${node.id}-${p.key}`}
                   checked={Number(node.getParam(p.key)) >= 0.5}
                   onChange={(e) => { node.setParam(p.key, e.target.checked ? 1 : 0); bump(); }}
-                  className="accent-[#D4AF37]"
+                  className="accent-[var(--syn-accent)]"
                 />
               </label>
             ) : (() => {
@@ -463,7 +480,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
                     step={p.step}
                     value={base}
                     onChange={(e) => { bus.setBase(node, p.key, parseFloat(e.target.value)); bump(); }}
-                    className="w-full h-1 accent-[#D4AF37] cursor-pointer"
+                    className="w-full h-1 accent-[var(--syn-accent)] cursor-pointer"
                   />
                   {mod && (
                     <div className="flex items-center gap-1.5">
@@ -511,6 +528,12 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
           </span>
           <span className={isDayMode ? 'text-neutral-600' : 'text-neutral-400'}>
             FPS <b className="text-gold-500" data-testid="chain-fps">{fps}</b>
+          </span>
+          <span
+            title="Adaptive internal render resolution (§6): steps down when the frame rate falls under budget"
+            className={isDayMode ? 'text-neutral-600' : 'text-neutral-400'}
+          >
+            RES <b className={resPct < 100 ? 'text-amber-400' : 'text-gold-500'} data-testid="chain-res">{resPct}%</b>
           </span>
           <button
             type="button"
