@@ -56,10 +56,21 @@
 > 10 Hz) → SEGMENTATION su Bokeh (soggetto nitido) e Blob Reveal (rotoscope);
 > degradazione controllata verificata al pixel (output identico senza maschera,
 > stato SEG: READY/LOADING/UNAVAILABLE nel Chain Lab) — 13/13 check +
-> regressione completa 41/41. ⚠ il percorso READY va provato manualmente con
-> webcam/persona reale (l'ambiente di verifica non raggiunge la CDN).
-> Prossimi passi Fase 5/6: vendoring MediaPipe (affidabilità offline), estetica
-> a design token, performance pass 60fps.
+> regressione completa 41/41.
+> **Fase 6 (in corso, 4/5)**: **MediaPipe vendorizzato ✅** (tasks-vision +
+> wasm SIMD + selfie_segmenter in repo, ~9.6 MB — la segmentazione raggiunge
+> READY senza rete, local-first con fallback CDN, e il modello reale è ora
+> esercitato nella verifica: maschera vuota su footage non-persona).
+> **Risoluzione adattiva ✅** (§6.4: 100→75→50% con isteresi sotto budget,
+> indicatore RES nel Chain Lab, export Master sempre a risoluzione nativa).
+> **Design token ✅** (decisione #3: `--syn-*` su :root alimenta scala Tailwind,
+> glow e grafo canvas — re-skin verificato ricolorando l'app in blu a runtime).
+> **Segnaposto nav ✅** (Save = snapshot sessione ripristinato al boot;
+> Projects = elenco catene salvate aperte direttamente nel Chain Lab; Contact
+> rimosso). Verifica: 11/11 nuovi check + regressione totale 54/54.
+> Resta: QA cross-browser Safari/Firefox (non eseguibile nell'ambiente di
+> verifica, solo Chromium disponibile) e la definizione della terza estetica
+> (decisione di State — ora è una sostituzione del blocco token).
 
 ---
 
@@ -321,14 +332,19 @@ Prerequisito: porting (lo "step 2" della decisione #4). Non si può fare con gli
 
 ### Fase 6 — Estetica finale, performance, rifinitura
 
-- [ ] Applicazione della **terza estetica** (decisione #3) quando definita: si costruisce fin
-      da subito tutto su design token CSS (`--syn-bg`, `--syn-accent`, font slot…), così il
-      re-skin sarà una sostituzione di variabili, non una riscrittura.
-- [ ] Performance pass per 60 fps @ 1080p+ (§6).
-- [ ] Vendoring delle dipendenze CDN (three.js, MediaPipe) dentro la repo per affidabilità
-      e versioni bloccate.
-- [ ] QA cross-browser (Chrome/Edge → Safari/Firefox), gestione permessi negati, empty state.
-- [ ] Pulizia voci segnaposto (Save/Projects/Contact) o loro implementazione minima.
+- [x] Design token CSS (`--syn-bg`, `--syn-accent`, font slot…) su tutta la UI, grafo canvas
+      incluso — il re-skin è una sostituzione di variabili, verificata a runtime. La **terza
+      estetica** (decisione #3) resta da definire con State: ora è uno swap del blocco token.
+- [x] Performance pass (§6.4): risoluzione interna adattiva 100→75→50% con isteresi e
+      indicatore RES; l'export Master resta sempre a risoluzione nativa. (Target 60 fps @
+      1080p da validare su hardware di riferimento con GPU reale.)
+- [x] Vendoring delle dipendenze CDN dentro la repo: three.js (già fatto) + MediaPipe
+      tasks-vision/wasm/modello (~9.6 MB) — segmentazione funzionante offline, CDN come
+      fallback.
+- [ ] QA cross-browser (Chrome/Edge → Safari/Firefox), gestione permessi negati, empty state
+      (permessi/empty state già coperti nel Chain Lab; Safari/Firefox da provare a mano).
+- [x] Pulizia voci segnaposto: Save = snapshot di sessione (ripristinato al boot),
+      Projects = catene salvate aperte nel Chain Lab, Contact rimosso.
 
 ---
 
