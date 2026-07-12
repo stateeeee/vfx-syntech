@@ -18,9 +18,10 @@
 > 2 effetti in serie (bypass, riordino, parametri live), verificata a livello di pixel.
 > Parità round 1 ✅: AnalogNode con pipeline completa (pixel sort multi-pass →
 > feedback persistente con zoom/rot/hue → CRT), BlobTrackerNode con FX dentro i blob
-> (invert, thermal, security, glitch) — tutto verificato al pixel. Prossimi passi
-> Fase 5: porting di Bokeh/Blob Reveal/Anamorphic come nodi, catena creata collegando
-> i nodi del grafo-cervello, export Master dal motore.
+> (invert, thermal, security, glitch) — tutto verificato al pixel. Export Master della
+> catena intera dal Chain Lab ✅ (verificato decodificando l'MP4 prodotto). Prossimi
+> passi Fase 5: porting di Bokeh/Blob Reveal/Anamorphic come nodi, catena creata
+> collegando i nodi del grafo-cervello.
 
 ---
 
