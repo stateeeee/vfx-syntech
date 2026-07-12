@@ -3,10 +3,12 @@
 > Documento di riferimento del progetto. Aggiornato: 2026-07-11.
 > Decisioni prese con il proprietario del progetto (State) — vedi §2.
 >
-> **Stato avanzamento (2026-07-11):** Fase 0 ✅ · Fase 1 ✅ · Fase 3 ✅ (tutti e 5 gli
+> **Stato avanzamento (2026-07-12):** Fase 0 ✅ · Fase 1 ✅ · Fase 3 ✅ (tutti e 5 gli
 > effetti aprono la loro build reale in iframe con adapter minimo: handshake, telemetria
-> fps/sorgente/REC, cleanup risorse alla chiusura). Prossimo: **Fase 2** — ParamSchema
-> completo e Gemini che pilota i parametri veri.
+> fps/sorgente/REC, cleanup risorse alla chiusura). **Fase 2 ✅ per il Blob Tracker**:
+> ParamSchema completo (34 parametri con range e aiHint), preset Gemini che pilotano i
+> controlli veri via bridge, pulsante Gemini AI dentro l'effetto, three.js vendorizzato.
+> Prossimo: estendere l'adapter v2 (ParamSchema) agli altri 4 effetti, poi Fase 4 (export).
 
 ---
 
