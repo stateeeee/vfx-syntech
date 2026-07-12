@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, Camera, Film, Link2, Power } from 'lucide-react';
+import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Power } from 'lucide-react';
 import { SynEngine, EngineNode } from '../engine/SynEngine';
 import { BlobTrackerNode } from '../engine/nodes/BlobTrackerNode';
 import { AnalogNode } from '../engine/nodes/AnalogNode';
@@ -70,6 +70,72 @@ export default function ChainLab({ isDayMode, onBack }: ChainLabProps) {
       setError(null);
     } catch (e) {
       setError('Webcam: ' + (e as Error).message);
+    }
+  };
+
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState('');
+
+  // Master Quality export of the WHOLE CHAIN: the shared engine
+  // (vendor/syntech-export.js) steps the source video frame by frame while
+  // SynEngine renders deterministically with a synthetic clock.
+  const runMasterExport = async () => {
+    const engine = engineRef.current;
+    if (!engine || exporting) return;
+    const video = engine.source;
+    if (engine.kind !== 'video' || !video || !isFinite(video.duration) || !video.duration) {
+      setExportMsg('✗ load a video file first');
+      return;
+    }
+    setExporting(true);
+    setExportMsg('preparing…');
+    try {
+      const loadScript = (src: string) =>
+        new Promise<void>((res, rej) => {
+          if (document.querySelector(`script[src="${src}"]`)) return res();
+          const el = document.createElement('script');
+          el.src = src;
+          el.onload = () => res();
+          el.onerror = () => rej(new Error('failed to load ' + src));
+          document.head.appendChild(el);
+        });
+      await loadScript('/effects/vendor/mp4-muxer.min.js');
+      await loadScript('/effects/vendor/syntech-export.js');
+      const SyntechExport = (window as any).SyntechExport;
+      if (!SyntechExport?.isSupported()) throw new Error('WebCodecs not available in this browser');
+
+      engine.stop();
+      video.pause();
+      const t0 = video.currentTime;
+      let clock = performance.now();
+      try {
+        const res = await SyntechExport.exportMasterQuality({
+          video,
+          fps: 30,
+          getFrame: async () => {
+            clock += 1000 / 30;
+            engine.renderFrame(clock);
+            return engine.canvas;
+          },
+          filename: 'vfx_chain_' + Date.now() + '.mp4',
+          onProgress: (done: number, total: number, phase: string) =>
+            setExportMsg(`MASTER ${phase.toUpperCase()} ${done}/${total}`),
+        });
+        setExportMsg(`✓ ${res.filename} (${res.codec}${res.audio ? ' + audio' : ''})`);
+      } finally {
+        await new Promise<void>((r) => {
+          const on = () => { video.removeEventListener('seeked', on); r(); };
+          video.addEventListener('seeked', on);
+          setTimeout(r, 1500);
+          video.currentTime = t0;
+        });
+        void video.play().catch(() => {});
+        engine.start();
+      }
+    } catch (e) {
+      setExportMsg('✗ ' + (e as Error).message);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -175,6 +241,18 @@ export default function ChainLab({ isDayMode, onBack }: ChainLabProps) {
           <span className={isDayMode ? 'text-neutral-600' : 'text-neutral-400'}>
             FPS <b className="text-gold-500" data-testid="chain-fps">{fps}</b>
           </span>
+          <button
+            type="button"
+            data-testid="chain-master"
+            onClick={runMasterExport}
+            disabled={exporting}
+            className="flex items-center gap-1.5 font-mono text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded bg-gold-500 text-black hover:bg-gold-400 disabled:opacity-40 cursor-pointer"
+          >
+            <Diamond className="w-3 h-3" /> Master MP4
+          </button>
+          {exportMsg && (
+            <span data-testid="chain-export-msg" className="text-[9px] text-gold-500 normal-case tracking-normal max-w-56 truncate">{exportMsg}</span>
+          )}
         </div>
       </div>
 
