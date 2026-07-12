@@ -1,7 +1,7 @@
-import React, { useRef } from 'react';
-import { ArrowLeft, Radio } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { ArrowLeft, Radio, Sparkle } from 'lucide-react';
 import { ModuleConfig } from '../types';
-import { EffectTelemetry } from '../bridge/types';
+import { EffectTelemetry, ParamSchema, ShellMessage } from '../bridge/types';
 import { useEffectBridge } from '../bridge/useEffectBridge';
 
 interface EffectHostProps {
@@ -10,6 +10,12 @@ interface EffectHostProps {
   isDayMode: boolean;
   onBack: () => void;
   onTelemetry?: (t: EffectTelemetry) => void;
+  /** Latest ParamSchema declared by the effect (empty until syntech:ready) */
+  onParams?: (params: ParamSchema[]) => void;
+  /** Hands the shell a sender for param:set / preset:apply messages */
+  onSendReady?: (send: (message: ShellMessage) => void) => void;
+  /** Opens the Gemini AI drawer over the effect */
+  onOpenAi?: () => void;
 }
 
 /**
@@ -23,9 +29,24 @@ export default function EffectHost({
   isDayMode,
   onBack,
   onTelemetry,
+  onParams,
+  onSendReady,
+  onOpenAi,
 }: EffectHostProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const { isReady, telemetry, send } = useEffectBridge(iframeRef, onTelemetry);
+  const { isReady, params, telemetry, send } = useEffectBridge(iframeRef, onTelemetry);
+
+  const onParamsRef = useRef(onParams);
+  onParamsRef.current = onParams;
+  useEffect(() => {
+    onParamsRef.current?.(params);
+  }, [params]);
+
+  const onSendReadyRef = useRef(onSendReady);
+  onSendReadyRef.current = onSendReady;
+  useEffect(() => {
+    onSendReadyRef.current?.(send);
+  }, [send]);
 
   const handleBack = () => {
     // Let the effect stop camera/mic/recorders before the frame is torn down
@@ -41,18 +62,31 @@ export default function EffectHost({
           isDayMode ? 'border-gold-500/15 bg-[#f7f5f0]' : 'border-gold-500/20 bg-black'
         }`}
       >
-        <button
-          type="button"
-          onClick={handleBack}
-          className={`flex items-center gap-2 font-mono text-[10px] font-bold tracking-[0.2em] uppercase px-3 py-2 rounded border transition-colors cursor-pointer ${
-            isDayMode
-              ? 'border-gold-500/40 text-gold-700 hover:bg-gold-500/10'
-              : 'border-gold-500/30 text-gold-500 hover:bg-gold-500/10'
-          }`}
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to console
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleBack}
+            className={`flex items-center gap-2 font-mono text-[10px] font-bold tracking-[0.2em] uppercase px-3 py-2 rounded border transition-colors cursor-pointer ${
+              isDayMode
+                ? 'border-gold-500/40 text-gold-700 hover:bg-gold-500/10'
+                : 'border-gold-500/30 text-gold-500 hover:bg-gold-500/10'
+            }`}
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to console
+          </button>
+
+          {onOpenAi && (
+            <button
+              type="button"
+              onClick={onOpenAi}
+              className="flex items-center gap-2 font-mono text-[10px] font-bold tracking-[0.2em] uppercase px-3 py-2 rounded bg-gold-500 text-black hover:bg-gold-400 transition-colors cursor-pointer"
+            >
+              <Sparkle className="w-3.5 h-3.5" />
+              Gemini AI
+            </button>
+          )}
+        </div>
 
         <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest">
           <span className={`font-extrabold ${isDayMode ? 'text-neutral-900' : 'text-white'}`}>
@@ -67,6 +101,12 @@ export default function EffectHost({
             <Radio className="w-3 h-3" />
             {isReady ? 'LINKED' : 'LOADING'}
           </span>
+
+          {isReady && params.length > 0 && (
+            <span className={`hidden md:inline ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
+              <b className="text-gold-500">{params.length}</b> PARAMS
+            </span>
+          )}
 
           {telemetry && (
             <>

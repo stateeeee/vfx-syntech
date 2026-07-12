@@ -8,10 +8,12 @@ export interface ModuleConfig {
   parameters: {
     [key: string]: {
       label: string;
-      value: number; // 0 to 100
+      value: number;
       min: number;
       max: number;
       step: number;
+      /** natural-language hint forwarded to Gemini (from the effect's ParamSchema) */
+      hint?: string;
     };
   };
 }

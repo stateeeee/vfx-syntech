@@ -50,7 +50,7 @@ FORMAT RULES:
 - Use elegant, clean markdown.
 - Maintain a high-tech, precise scientific, slightly poetic tone.
 - Keep responses concise, scannable, and highly relevant.
-- IMPORTANT: If you suggest changes to parameters, format them nicely. If you suggest specific values for the current active module, you can optionally include a line with JSON formatting like: \`PRESET:{"displacement":80,"fluidDynamics":45}\` (substituting parameter keys) so the user can apply them instantly!`;
+- IMPORTANT: If you suggest changes to parameters, format them nicely. If you suggest specific values for the current active module, you can optionally include a line with JSON formatting like: \`PRESET:{"threshold":96,"datamosh":18}\` using ONLY keys that exist in the Parameters listed above, so the user can apply them instantly. Each parameter entry includes its own "min"/"max" range and a "hint" describing what it controls — every value you suggest MUST lie within that parameter's range (ranges differ per parameter), and parameters hinted as "(on/off switch)" accept only 0 or 1.`;
 
     // Map message history to standard GenAI parts format
     const formattedContents = [
@@ -100,8 +100,8 @@ FORMAT RULES:
     let extractedPreset: any = null;
 
     if (activeModuleId === "blob_tracker") {
-      fallbackReply += "As requested, local sensors suggest boosting **Displacement** to 85% and **Fluid Dynamics** to 75% for dramatic, organic canvas deformation.\n\nPRESET:{\"displacement\":85,\"fluidDynamics\":75,\"cellSize\":35}";
-      extractedPreset = { displacement: 85, fluidDynamics: 75, cellSize: 35 };
+      fallbackReply += "As requested, local sensors suggest a dramatic organic tracking look: **Threshold** at 96 for wide blob coverage, **Datamosh** at 18 with **Glitch** at 12 for digital decay, and **Line Glow** at 65 for luminous connections.\n\nPRESET:{\"threshold\":96,\"datamosh\":18,\"glitch\":12,\"connGlow\":65,\"fxOpacity\":100}";
+      extractedPreset = { threshold: 96, datamosh: 18, glitch: 12, connGlow: 65, fxOpacity: 100 };
     } else if (activeModuleId === "analog") {
       fallbackReply += "Local scanlines report optimal **Analog** settings: Raise **CRT Emulation** to 80% to bring out phosphor grids, with **Chromatic Aberration** at 65% for retro distortion.\n\nPRESET:{\"crtEmulation\":80,\"syncJitter\":45,\"chromaticAberration\":65}";
       extractedPreset = { crtEmulation: 80, syncJitter: 45, chromaticAberration: 65 };
@@ -133,19 +133,15 @@ app.post("/api/gemini/optimize", async (req, res) => {
     let systemInstruction = `You are the VFX Syntech Gemini Optimizer.
 Your job is to analyze the active module and its parameters, and return a set of optimized parameter values that would make the visuals extremely high-fidelity, dramatic, and aesthetically stunning.
 
-Return ONLY a valid JSON object mapping the parameter keys to their recommended percentage values (numbers between 0 and 100). Do not write any other text, markdown, or code blocks. Just the raw JSON.
+Return ONLY a valid JSON object mapping parameter keys (exactly as given in CURRENT PARAMETERS) to their recommended numeric values. Do not write any other text, markdown, or code blocks. Just the raw JSON.
 
-Examples for BLOB STATE TRACKER (keys: displacement, fluidDynamics, cellSize):
-{"displacement":85,"fluidDynamics":70,"cellSize":35}
+CRITICAL RULES:
+- Each parameter entry in CURRENT PARAMETERS includes its own "min", "max" and "step"; every value you return MUST lie within that parameter's [min, max] range. Ranges differ per parameter — they are NOT all 0-100.
+- Parameters whose hint says "(on/off switch)" accept only 0 or 1.
+- Use each parameter's "hint" field to understand what it controls.
+- Only include keys you want to change; omit the rest.
 
-Examples for ANALOG STATE (keys: crtEmulation, syncJitter, chromaticAberration):
-{"crtEmulation":75,"syncJitter":40,"chromaticAberration":60}
-
-Examples for PARTICLE HARMONICS (keys: speed, gravity, spread):
-{"speed":80,"gravity":30,"spread":75}
-
-Examples for SPECTRUM ANALYZER (keys: sensitivity, decay, resolution):
-{"sensitivity":90,"decay":35,"resolution":80}
+Example shape of a valid answer: {"threshold":96,"datamosh":18,"fxInvert":1}
 
 ACTIVE MODULE: ${activeModule}
 CURRENT PARAMETERS: ${JSON.stringify(parameters)}`;
@@ -175,7 +171,7 @@ CURRENT PARAMETERS: ${JSON.stringify(parameters)}`;
     // Provide beautifully optimized fallback defaults so the button still works instantly
     let fallbackPreset: Record<string, number> = {};
     if (activeModule === "blob_tracker") {
-      fallbackPreset = { displacement: 85, fluidDynamics: 70, cellSize: 30 };
+      fallbackPreset = { threshold: 96, datamosh: 18, glitch: 12, connGlow: 65, fxOpacity: 100 };
     } else if (activeModule === "analog") {
       fallbackPreset = { crtEmulation: 80, syncJitter: 45, chromaticAberration: 65 };
     } else if (activeModule === "blob_reveal") {
@@ -246,6 +242,9 @@ Describe what the wave forms and particles are expressing. Keep it elegant, dram
 // Configure Vite middleware or static route handling depending on production state
 const startServer = async () => {
   if (process.env.NODE_ENV !== "production") {
+    // Effect builds are self-contained static apps: serve them ahead of the
+    // Vite pipeline, which blocks public assets requested as <script src>
+    app.use("/effects", express.static(path.join(process.cwd(), "public/effects")));
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },

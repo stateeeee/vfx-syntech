@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BLOB STATE TRACKER</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../vendor/three.r128.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
 
@@ -6813,20 +6813,128 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 </script>
 <script>
 /* ═══════════════════════════════════════════════════════
-   VFX SYNTECH SHELL ADAPTER (bridge phase 1)
+   VFX SYNTECH SHELL ADAPTER (bridge phase 2) — BLOB TRACKER
    Speaks the syntech:* postMessage protocol with the shell
    when embedded in an iframe; inert when opened standalone.
+   Phase 2: exports the full ParamSchema (read live from the
+   DOM controls) and accepts param:set / preset:apply.
    ═══════════════════════════════════════════════════════ */
 (function(){
   if (window.parent === window) return;
 
+  // Parameter map: shell key → existing DOM control. Ranges/values are read
+  // from the inputs at runtime so the schema can never drift from the UI.
+  const SLIDERS = [
+    { key:'threshold',          id:'sThr',      label:'BLOB THRESHOLD',     group:'TRACKER',      reactive:true,  hint:'Luma threshold (0-255) for blob detection; lower detects more and larger blobs' },
+    { key:'brightness',         id:'sBri',      label:'BRIGHTNESS',         group:'TRACKER',      reactive:true,  hint:'Brightness offset of the analysis buffer before detection' },
+    { key:'contrast',           id:'sCon',      label:'CONTRAST',           group:'TRACKER',      reactive:true,  hint:'Contrast multiplier of the analysis buffer before detection' },
+    { key:'minArea',            id:'sMin',      label:'MIN BLOB AREA',      group:'TRACKER',      reactive:false, hint:'Minimum blob area in pixels; higher keeps only large shapes' },
+    { key:'fixedPointsMax',     id:'sFixedMax', label:'FIXED POINTS MAX',   group:'TRACKER',      reactive:false, hint:'Maximum number of locked tracking points' },
+    { key:'datamosh',           id:'sDmx',      label:'DATAMOSH',           group:'VISUAL FX',    reactive:true,  hint:'Datamosh smear amount rendered inside blobs' },
+    { key:'glitch',             id:'sGlx',      label:'GLITCH',             group:'VISUAL FX',    reactive:true,  hint:'Digital glitch intensity rendered inside blobs' },
+    { key:'fxOpacity',          id:'sFxOp',     label:'FX OPACITY',         group:'VISUAL FX',    reactive:true,  hint:'Opacity (0-100) of the FX layer drawn inside blobs' },
+    { key:'connWidth',          id:'sLW',       label:'LINE WIDTH',         group:'CONNECTIONS',  reactive:true,  hint:'Stroke width of the lines connecting blobs' },
+    { key:'connOpacity',        id:'sConnOp',   label:'LINE OPACITY',       group:'CONNECTIONS',  reactive:true,  hint:'Opacity (0-100) of blob connection lines' },
+    { key:'connSaturation',     id:'sConnSat',  label:'LINE SATURATION',    group:'CONNECTIONS',  reactive:false, hint:'Color saturation (0-100) of connection lines' },
+    { key:'connGlow',           id:'sConnGlow', label:'LINE GLOW',          group:'CONNECTIONS',  reactive:true,  hint:'Glow amount (0-100) of connection lines' },
+    { key:'rippleDisplacement', id:'sDisp',     label:'RIPPLE DISPLACEMENT',group:'WATER RIPPLE', reactive:true,  hint:'Water ripple displacement strength' },
+    { key:'rippleDamping',      id:'sDamp',     label:'RIPPLE DAMPING',     group:'WATER RIPPLE', reactive:false, hint:'Ripple decay; closer to 1 rings longer' },
+    { key:'rippleWave',         id:'sWave',     label:'RIPPLE WAVE',        group:'WATER RIPPLE', reactive:true,  hint:'Ripple wave propagation speed' },
+    { key:'panelScale',         id:'sScale',    label:'PANEL SCALE',        group:'PANELS',       reactive:true,  hint:'Scale of the 3D panels in panels render mode' },
+    { key:'panelTurbulence',    id:'sTurb',     label:'PANEL TURBULENCE',   group:'PANELS',       reactive:true,  hint:'Organic motion turbulence of the 3D panels' },
+    { key:'panelCamZ',          id:'sCamZ',     label:'PANEL CAMERA Z',     group:'PANELS',       reactive:false, hint:'3D camera distance in panels render mode' },
+    { key:'panelsBgOpacity',    id:'sBgOp',     label:'PANELS BG OPACITY',  group:'PANELS',       reactive:true,  hint:'Background video opacity (0-100) behind the panels' }
+  ];
+  const TOGGLES = [
+    { key:'fxBlob',     id:'fx-blob',     label:'FX BLOB FILL',   group:'VISUAL FX', hint:'Fill blobs with the FX layer' },
+    { key:'fxConn',     id:'fx-conn',     label:'FX CONNECTIONS', group:'VISUAL FX', hint:'Apply FX to connection lines' },
+    { key:'fxData',     id:'fx-data',     label:'FX DATAMOSH',    group:'VISUAL FX', hint:'Enable datamosh FX' },
+    { key:'fxGlitch',   id:'fx-glitch',   label:'FX GLITCH',      group:'VISUAL FX', hint:'Enable glitch FX' },
+    { key:'fxInvert',   id:'fx-invert',   label:'FX INVERT',      group:'VISUAL FX', hint:'Invert colors inside blobs' },
+    { key:'fxThermal',  id:'fx-thermal',  label:'FX THERMAL',     group:'VISUAL FX', hint:'Thermal-camera palette inside blobs' },
+    { key:'fxSecurity', id:'fx-security', label:'FX SECURITY',    group:'VISUAL FX', hint:'Security-camera look inside blobs' },
+    { key:'fxLiquid',   id:'fx-liquid',   label:'FX LIQUID',      group:'VISUAL FX', hint:'Liquid distortion inside blobs' },
+    { key:'fxLetters',  id:'fx-letters',  label:'FX LETTERS',     group:'VISUAL FX', hint:'Letter rain rendered inside blobs' },
+    { key:'fxNums',     id:'fx-nums',     label:'FX NUMBERS',     group:'VISUAL FX', hint:'Number rain rendered inside blobs' },
+    { key:'fxPanels',   id:'fx-panels',   label:'FX PANELS',      group:'VISUAL FX', hint:'Apply FX to the 3D panels' },
+    { key:'fxTmix',     id:'fx-tmix',     label:'FX TIME MIX',    group:'VISUAL FX', hint:'Temporal frame mixing / echo' },
+    { key:'ripple',     id:'btn-ripple',  label:'WATER RIPPLE',   group:'WATER RIPPLE', hint:'Enable the interactive water ripple layer' },
+    { key:'dashedLines',id:'btn-dashed',  label:'DASHED LINES',   group:'CONNECTIONS',  hint:'Draw connection lines dashed instead of solid' },
+    { key:'panelLabels',id:'btn-plabels', label:'PANEL LABELS',   group:'PANELS',       hint:'Show data labels on the 3D panels' }
+  ];
+
   function post(type, payload){
     try { window.parent.postMessage({ type: type, payload: payload || {} }, '*'); } catch(e) {}
   }
+  function num(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+  function buildSchema(){
+    const params = [];
+    SLIDERS.forEach(function(s){
+      const el = document.getElementById(s.id);
+      if (!el) return;
+      params.push({
+        key: s.key, label: s.label, type: 'number',
+        min: num(el.min), max: num(el.max), step: num(el.step) || 1, value: num(el.value),
+        group: s.group, reactive: s.reactive, aiHint: s.hint || ''
+      });
+    });
+    TOGGLES.forEach(function(t){
+      const el = document.getElementById(t.id);
+      if (!el) return;
+      params.push({
+        key: t.key, label: t.label, type: 'boolean', value: el.classList.contains('on'),
+        group: t.group, reactive: false, aiHint: t.hint || ''
+      });
+    });
+    return params;
+  }
+
+  function setParam(key, value){
+    const s = SLIDERS.find(function(x){ return x.key === key; });
+    if (s) {
+      const el = document.getElementById(s.id);
+      if (!el) return false;
+      let v = Number(value);
+      if (isNaN(v)) return false;
+      const mn = parseFloat(el.min), mx = parseFloat(el.max);
+      if (!isNaN(mn)) v = Math.max(mn, v);
+      if (!isNaN(mx)) v = Math.min(mx, v);
+      el.value = String(v);
+      // Reuse the effect's own binding logic (updates state + value display)
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    const t = TOGGLES.find(function(x){ return x.key === key; });
+    if (t) {
+      const el = document.getElementById(t.id);
+      if (!el) return false;
+      const want = value === true || value === 1 || value === '1' || value === 'true';
+      if (el.classList.contains('on') !== want) el.click();
+      return true;
+    }
+    return false;
+  }
+
+  // Keep the shell in sync when the user moves the effect's own controls
+  // (programmatic param:set dispatches the same events, so it reports too)
+  SLIDERS.forEach(function(s){
+    const el = document.getElementById(s.id);
+    if (el) el.addEventListener('input', function(){
+      post('syntech:param:changed', { key: s.key, value: num(el.value) });
+    });
+  });
+  TOGGLES.forEach(function(t){
+    const el = document.getElementById(t.id);
+    if (el) el.addEventListener('click', function(){
+      setTimeout(function(){
+        post('syntech:param:changed', { key: t.key, value: el.classList.contains('on') });
+      }, 0);
+    });
+  });
 
   function announce(){
-    // params stays empty in phase 1; the full ParamSchema ships in phase 2
-    post('syntech:ready', { effectId: 'blob_tracker', version: '0.1.0', params: [] });
+    post('syntech:ready', { effectId: 'blob_tracker', version: '0.2.0', params: buildSchema() });
   }
   if (document.readyState === 'complete') announce();
   else window.addEventListener('load', announce);
@@ -6840,11 +6948,24 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     post('syntech:state', { fps: f, srcMode: sm, recording: rec });
   }, 1000);
 
-  // Shell is about to tear the iframe down: release every live resource.
-  // Frame removal would release them anyway; this makes it immediate.
   window.addEventListener('message', function(ev){
     var d = ev && ev.data;
-    if (!d || d.type !== 'syntech:close') return;
+    if (!d || !d.type) return;
+
+    if (d.type === 'syntech:param:set' && d.payload) {
+      setParam(d.payload.key, d.payload.value);
+      return;
+    }
+    if (d.type === 'syntech:preset:apply' && d.payload && d.payload.params) {
+      Object.keys(d.payload.params).forEach(function(k){
+        setParam(k, d.payload.params[k]);
+      });
+      return;
+    }
+    if (d.type !== 'syntech:close') return;
+
+    // Shell is about to tear the iframe down: release every live resource.
+    // Frame removal would release them anyway; this makes it immediate.
     try { if (mediaRec) mediaRec.stop(); } catch(e) {}
     try { stopTracker(); } catch(e) {}
     try { stopWebcam(); } catch(e) {}

@@ -40,9 +40,13 @@ export function useEffectBridge(
           setTelemetry(msg.payload);
           onTelemetryRef.current?.(msg.payload);
           break;
+        case 'syntech:param:changed':
+          setParams((prev) =>
+            prev.map((p) => (p.key === msg.payload.key ? { ...p, value: msg.payload.value } : p))
+          );
+          break;
         default:
-          // 'syntech:param:changed' and 'syntech:export:done' are consumed
-          // by the shell starting from Phase 2 (full parameter bridge).
+          // 'syntech:export:done' is consumed by the shell in a later phase
           break;
       }
     };

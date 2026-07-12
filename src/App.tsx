@@ -24,7 +24,7 @@ import {
   Moon
 } from 'lucide-react';
 import { ModuleConfig, ModuleId, ActiveTab, SignalSource } from './types';
-import { EffectTelemetry } from './bridge/types';
+import { EffectTelemetry, ParamSchema, ShellMessage } from './bridge/types';
 import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
 import VfxCanvas from './components/VfxCanvas';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
@@ -46,6 +46,9 @@ export default function App() {
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
   const [effectTelemetry, setEffectTelemetry] = useState<EffectTelemetry | null>(null);
 
+  // Sender registered by the open effect's bridge (param:set / preset:apply)
+  const effectSendRef = React.useRef<((message: ShellMessage) => void) | null>(null);
+
   // Selects the module in the dashboard and, when a real effect build is
   // registered for it, opens it full-terminal (PLAN.md decision #1)
   const handleModuleOpen = (id: ModuleId) => {
@@ -58,6 +61,42 @@ export default function App() {
   const handleEffectClose = () => {
     setOpenEffectId(null);
     setEffectTelemetry(null);
+    effectSendRef.current = null;
+  };
+
+  // The effect declared its real ParamSchema: swap the module's placeholder
+  // parameters for the real ones so Gemini and the shell operate on truth.
+  // Booleans are mapped to 0/1 sliders so AI presets can flip them too.
+  const handleEffectParams = (effectId: ModuleId, params: ParamSchema[]) => {
+    if (params.length === 0) return;
+    setModules((prev) =>
+      prev.map((m) => {
+        if (m.id !== effectId) return m;
+        const parameters: ModuleConfig['parameters'] = {};
+        for (const p of params) {
+          if (p.type === 'number') {
+            parameters[p.key] = {
+              label: p.label,
+              value: Number(p.value) || 0,
+              min: p.min ?? 0,
+              max: p.max ?? 100,
+              step: p.step ?? 1,
+              hint: p.aiHint,
+            };
+          } else if (p.type === 'boolean') {
+            parameters[p.key] = {
+              label: p.label,
+              value: p.value ? 1 : 0,
+              min: 0,
+              max: 1,
+              step: 1,
+              hint: `(on/off switch) ${p.aiHint ?? ''}`.trim(),
+            };
+          }
+        }
+        return Object.keys(parameters).length > 0 ? { ...m, parameters } : m;
+      })
+    );
   };
 
   // Gemini Intelligence custom states
@@ -68,7 +107,8 @@ export default function App() {
   const [isProcessingGemini, setIsProcessingGemini] = useState(false);
   const [suggestedPreset, setSuggestedPreset] = useState<any | null>(null);
 
-  // Apply a parameter preset suggested by Gemini AI
+  // Apply a parameter preset suggested by Gemini AI: update the shell state
+  // and forward it through the bridge so the open effect changes for real
   const handleApplyPreset = (preset: any) => {
     if (!preset) return;
     setModules((prev) =>
@@ -92,6 +132,7 @@ export default function App() {
         return m;
       })
     );
+    effectSendRef.current?.({ type: 'syntech:preset:apply', payload: { params: preset } });
   };
 
   const handleSendToGemini = async () => {
@@ -368,6 +409,9 @@ export default function App() {
             isDayMode={isDayMode}
             onBack={handleEffectClose}
             onTelemetry={setEffectTelemetry}
+            onParams={(params) => handleEffectParams(openEffectId, params)}
+            onSendReady={(send) => { effectSendRef.current = send; }}
+            onOpenAi={() => setIsAiDrawerOpen(true)}
           />
         ) : (
         <div className={`grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x ${isDayMode ? 'divide-gold-500/15' : 'divide-gold-500/10'} flex-1 min-h-[500px]`}>
