@@ -37,9 +37,17 @@
 > modulazione). Nel Chain Lab: pulsante AUDIO IN con meter live, e su ogni
 > parametro reactive un chip `~` che cicla off/bass/loud/treble/beat con slider
 > amount ±1 e readout modulato — verificato con WAV sintetico a 120 BPM come
-> mic finto (6/6 check). Prossimi passi Fase 5: parità visiva più profonda dei
-> nodi (maschera MediaPipe nei nodi Bokeh/Blob Reveal, pannelli 3D del tracker),
-> video-reactive nativo (motion → parametri), preset della catena.
+> mic finto (6/6 check).
+> **Video-reactive nativo ✅ + preset della catena ✅**: `VideoAnalyzer`
+> (frame-diff luma su griglia 80×45 → segnale MOTION 0..1 + BRIGHTNESS) — il
+> chip `~` ora cicla su tutte e 6 le sorgenti (bass/loud/treble/beat/motion/
+> bright), meter motion/bright live con sorgente attiva. Preset della catena in
+> localStorage (decisione #9): salvano l'intero rack — ordine nodi, bypass,
+> basi numeriche, booleani e route di modulazione — con load in place e
+> persistenza al reload (15/15 check; requisito preset della DoD §11 coperto
+> anche per la catena nativa). Prossimi passi Fase 5: parità visiva più
+> profonda dei nodi (maschera MediaPipe nei nodi Bokeh/Blob Reveal, pannelli 3D
+> del tracker), Gemini che pilota la catena nativa (ParamBus come ParamSchema).
 
 ---
 
