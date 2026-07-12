@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BLOB STATE TRACKER</title>
 <script src="../vendor/three.r128.min.js"></script>
+<script src="../vendor/mp4-muxer.min.js"></script>
+<script src="../vendor/syntech-export.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
 
@@ -1700,6 +1702,10 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="btn-rec"><div class="rec-dot"></div>REC</button>
         <div id="rec-time">00:00:00</div>
+        <!-- MASTER QUALITY EXPORT (offline frame-accurate render, phase 4) -->
+        <button class="fs-btn" id="btn-master" title="Offline frame-accurate render: MP4 at very high bitrate, no dropped frames. Needs a loaded video file.">◆&nbsp;&nbsp;MASTER MP4</button>
+        <button class="fs-btn" id="btn-pngseq" title="Mathematically lossless PNG sequence written to a folder you pick (for Premiere/AE compositing).">▦&nbsp;&nbsp;PNG SEQUENCE</button>
+        <div id="master-progress" style="font-size:9px;letter-spacing:1px;color:var(--t2);padding:2px 0;min-height:12px"></div>
       </div>
     </div>
 
@@ -6811,6 +6817,114 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 
 })();
 
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════
+   MASTER QUALITY EXPORT wiring — engine lives in
+   ../vendor/syntech-export.js (offline seek→render→encode)
+   ═══════════════════════════════════════════════════════ */
+(function(){
+  const compCv = document.createElement('canvas');
+  const compCtx = compCv.getContext('2d');
+  const progEl = document.getElementById('master-progress');
+  let exporting = false;
+
+  function setProg(txt){ if (progEl) progEl.textContent = txt; }
+
+  // Render ONE deterministic frame from the video's current position and
+  // composite the same layers the realtime REC captures (capLoop)
+  async function renderFrameAt(){
+    if (appMode === 'panels') {
+      if (!panelsScene) initPanels();
+      panelsAnimate();
+      if (panelsRafId) { cancelAnimationFrame(panelsRafId); panelsRafId = null; }
+    } else {
+      const wasPaused = paused; paused = false;
+      trackerFrame();
+      if (trackerRafId) { cancelAnimationFrame(trackerRafId); trackerRafId = null; }
+      paused = wasPaused;
+    }
+    compCv.width = dc.width; compCv.height = dc.height;
+    compCtx.drawImage(dc, 0, 0);
+    if (panelsCv.style.display !== 'none') try { compCtx.drawImage(panelsCv, 0, 0); } catch(e){}
+    if (fxOvCv.style.display !== 'none') try { compCtx.drawImage(fxOvCv, 0, 0); } catch(e){}
+    if (rippleOn && glC.style.display !== 'none') try { compCtx.drawImage(glC, 0, 0); } catch(e){}
+    return compCv;
+  }
+
+  async function runExport(kind){
+    if (exporting) return;
+    if (srcMode !== 'video' || !isFinite(vidEl.duration) || !vidEl.duration) {
+      toast('MASTER export needs a loaded VIDEO file');
+      setProg('✗ load a video file first');
+      return;
+    }
+    exporting = true;
+    const btnM = document.getElementById('btn-master');
+    const btnP = document.getElementById('btn-pngseq');
+    btnM.disabled = true; btnP.disabled = true;
+    const t0 = vidEl.currentTime;
+    const wasPlaying = !paused;
+    vidEl.pause(); paused = true;
+    try { updatePlayUI(); } catch(e){}
+    stopTracker();
+    if (panelsRafId) { cancelAnimationFrame(panelsRafId); panelsRafId = null; }
+
+    try {
+      const opts = {
+        video: vidEl, fps: 30, getFrame: renderFrameAt,
+        onProgress: function(done, total, phase){
+          setProg((kind === 'png' ? 'PNG ' : 'MASTER ') + phase.toUpperCase() + ' ' + done + '/' + total);
+        }
+      };
+      let res;
+      if (kind === 'png') {
+        res = await SyntechExport.exportPngSequence(opts);
+        setProg('✓ ' + res.frames + ' PNG frames saved');
+      } else {
+        res = await SyntechExport.exportMasterQuality(
+          Object.assign(opts, { filename: 'vfx_syntech_' + Date.now() + '.mp4' })
+        );
+        setProg('✓ ' + res.filename + ' (' + res.codec + (res.audio ? ' + audio' : '') + ')');
+      }
+      toast('◆ Export complete');
+      try {
+        if (window.parent !== window) window.parent.postMessage({
+          type: 'syntech:export:done',
+          payload: { blobUrl: '', mime: kind === 'png' ? 'image/png' : 'video/mp4',
+                     filename: kind === 'png' ? 'png-sequence' : res.filename }
+        }, '*');
+      } catch(e){}
+    } catch(err) {
+      console.warn('Master export:', err);
+      setProg('✗ ' + (err && err.message ? err.message : 'export failed'));
+      toast('Export error');
+    } finally {
+      exporting = false;
+      btnM.disabled = false; btnP.disabled = false;
+      // restore playhead and live rendering
+      await new Promise(function(r){
+        const on = function(){ vidEl.removeEventListener('seeked', on); r(); };
+        vidEl.addEventListener('seeked', on);
+        setTimeout(r, 1500);
+        vidEl.currentTime = t0;
+      });
+      if (appMode === 'panels') {
+        try { startPanels(); startPanelsBg(); } catch(e){}
+      } else {
+        startTracker();
+      }
+      if (wasPlaying) {
+        paused = false;
+        vidEl.play().catch(function(){});
+        try { updatePlayUI(); } catch(e){}
+      }
+    }
+  }
+
+  document.getElementById('btn-master').addEventListener('click', function(){ runExport('mp4'); });
+  document.getElementById('btn-pngseq').addEventListener('click', function(){ runExport('png'); });
+})();
 </script>
 <script>
 /* ═══════════════════════════════════════════════════════
