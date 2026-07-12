@@ -2583,16 +2583,130 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 </script>
 <script>
 /* ═══════════════════════════════════════════════════════
-   VFX SYNTECH SHELL ADAPTER (bridge phase 1) — ANALOG
+   VFX SYNTECH SHELL ADAPTER (bridge phase 2) — ANALOG
    Speaks the syntech:* postMessage protocol with the shell
    when embedded in an iframe; inert when opened standalone.
+   Numbers live in the effect's own P/PARAM_RANGES state;
+   knobs are driven through syncKnob, sliders through the DOM.
    ═══════════════════════════════════════════════════════ */
 (function(){
   if (window.parent === window) return;
 
+  const NUMBERS = [
+    { key:'feedbackAmt',   label:'FEEDBACK AMOUNT', group:'FEEDBACK', min:0, max:0.98, step:0.01, reactive:true,  hint:'Video feedback intensity (echo trails)' },
+    { key:'feedbackZoom',  label:'FEEDBACK ZOOM',   group:'FEEDBACK', min:-1, max:1,   step:0.01, reactive:true,  hint:'Feedback zoom in/out per frame' },
+    { key:'feedbackRot',   label:'FEEDBACK ROTATE', group:'FEEDBACK', min:-1, max:1,   step:0.01, reactive:true,  hint:'Feedback rotation per frame' },
+    { key:'feedbackDecay', label:'FEEDBACK DECAY',  group:'FEEDBACK', min:0, max:1,    step:0.01, reactive:false, hint:'How quickly feedback trails fade' },
+    { key:'hueShift',      label:'HUE SHIFT',       group:'FEEDBACK', min:-1, max:1,   step:0.01, reactive:true,  hint:'Hue rotation applied to the feedback' },
+    { key:'feedbackDriftX',label:'DRIFT X',         group:'FEEDBACK', min:-1, max:1,   step:0.01, reactive:true,  hint:'Horizontal drift of the feedback image' },
+    { key:'tearAmt',       label:'TEAR',            group:'GLITCH',   min:0, max:1,    step:0.01, reactive:true,  hint:'Horizontal sync tearing amount' },
+    { key:'dropoutAmt',    label:'DROPOUT',         group:'GLITCH',   min:0, max:1,    step:0.01, reactive:true,  hint:'Analog signal dropout bands' },
+    { key:'chromaAmt',     label:'CHROMA',          group:'GLITCH',   min:0, max:1,    step:0.01, reactive:true,  hint:'Chromatic aberration / color bleed' },
+    { key:'noiseAmt',      label:'NOISE',           group:'GLITCH',   min:0, max:1,    step:0.01, reactive:true,  hint:'Analog static noise amount' },
+    { key:'rollBar',       label:'ROLL BAR',        group:'GLITCH',   min:0, max:1,    step:0.01, reactive:true,  hint:'Vertical rolling luminance bar' },
+    { key:'trackingErr',   label:'TRACKING ERROR',  group:'GLITCH',   min:0, max:1,    step:0.01, reactive:true,  hint:'VHS tracking error distortion' },
+    { key:'barrelAmt',     label:'BARREL',          group:'CRT',      min:0, max:1,    step:0.01, reactive:false, hint:'CRT barrel distortion of the tube' },
+    { key:'scanlinesAmt',  label:'SCANLINES',       group:'CRT',      min:0, max:1,    step:0.01, reactive:true,  hint:'Scanline intensity' },
+    { key:'phosphorAmt',   label:'PHOSPHOR',        group:'CRT',      min:0, max:1,    step:0.01, reactive:false, hint:'Phosphor RGB mask visibility' },
+    { key:'bloomAmt',      label:'BLOOM',           group:'CRT',      min:0, max:1,    step:0.01, reactive:true,  hint:'Bloom glow around bright areas' },
+    { key:'vignetteAmt',   label:'VIGNETTE',        group:'CRT',      min:0, max:1,    step:0.01, reactive:false, hint:'Corner darkening of the tube' },
+    { key:'crtBlend',      label:'CRT BLEND',       group:'CRT',      min:0, max:1,    step:0.01, reactive:false, hint:'Overall CRT effect blend with the clean image' },
+    { key:'sortThresh',    label:'SORT THRESHOLD',  group:'PIXEL SORT', min:0, max:1,  step:0.01, reactive:true,  hint:'Luma threshold that triggers pixel sorting' },
+    { key:'sortPasses',    label:'SORT PASSES',     group:'PIXEL SORT', min:1, max:12, step:1,    reactive:false, hint:'Number of pixel sort passes (more = longer streaks)' },
+    { key:'reactSens',     label:'REACT SENSITIVITY', group:'AUDIO REACTIVE', min:0.1, max:2, step:0.05, reactive:false, hint:'Audio reactivity sensitivity' },
+    { key:'modDepth',      label:'MOD DEPTH',       group:'AUDIO REACTIVE', min:0, max:1, step:0.01, reactive:false, hint:'How deeply audio modulates the visuals' }
+  ];
+  const TOGGLES = [
+    { key:'sortEnabled',  btn:'btn-sort',  label:'PIXEL SORT ON',   group:'PIXEL SORT',     hint:'Enable the pixel sorting stage' },
+    { key:'reactEnabled', btn:'btn-react', label:'AUDIO REACT ON',  group:'AUDIO REACTIVE', hint:'Enable audio reactive modulation' }
+  ];
+
   function post(type, payload){
     try { window.parent.postMessage({ type: type, payload: payload || {} }, '*'); } catch(e) {}
   }
+
+  function buildSchema(){
+    const params = [];
+    NUMBERS.forEach(function(n){
+      let v = 0;
+      try { v = Number(P[n.key]) || 0; } catch(e) {}
+      params.push({ key:n.key, label:n.label, type:'number', min:n.min, max:n.max, step:n.step,
+        value:v, group:n.group, reactive:n.reactive, aiHint:n.hint });
+    });
+    TOGGLES.forEach(function(t){
+      let v = false;
+      try { v = !!P[t.key]; } catch(e) {}
+      params.push({ key:t.key, label:t.label, type:'boolean', value:v,
+        group:t.group, reactive:false, aiHint:t.hint });
+    });
+    return params;
+  }
+
+  function setNumber(key, value){
+    const def = NUMBERS.find(function(x){ return x.key === key; });
+    if (!def) return false;
+    let v = Number(value);
+    if (isNaN(v)) return false;
+    v = Math.max(def.min, Math.min(def.max, v));
+    const sl = document.getElementById('sl-' + key);
+    if (sl) {
+      sl.value = String(v);
+      sl.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    const knob = document.querySelector('.knob[data-id="' + key + '"]');
+    if (knob && typeof syncKnob === 'function') {
+      syncKnob(key, v);
+      if (typeof updateParam === 'function') updateParam(key, v);
+      return true;
+    }
+    try { P[key] = v; if (typeof updateParam === 'function') updateParam(key, v); return true; } catch(e) {}
+    return false;
+  }
+
+  function setParam(key, value){
+    const t = TOGGLES.find(function(x){ return x.key === key; });
+    if (t) {
+      const want = value === true || value === 1 || value === '1' || value === 'true';
+      let cur = false;
+      try { cur = !!P[key]; } catch(e) {}
+      if (cur !== want) {
+        const btn = document.getElementById(t.btn);
+        if (btn) btn.click();
+      }
+      return true;
+    }
+    return setNumber(key, value);
+  }
+
+  function notifyChanged(key, value){
+    post('syntech:param:changed', { key: key, value: value });
+  }
+
+  // Knob turns route through the effect's own updateParam: wrap it so the
+  // shell hears about every change, no matter which control produced it
+  try {
+    if (typeof updateParam === 'function') {
+      const _orig = updateParam;
+      updateParam = function(id, val){ _orig(id, val); notifyChanged(id, val); };
+    }
+  } catch(e) {}
+  NUMBERS.forEach(function(n){
+    const sl = document.getElementById('sl-' + n.key);
+    if (sl) sl.addEventListener('input', function(){ notifyChanged(n.key, parseFloat(sl.value)); });
+  });
+  TOGGLES.forEach(function(t){
+    const btn = document.getElementById(t.btn);
+    if (btn) btn.addEventListener('click', function(){
+      setTimeout(function(){ try { notifyChanged(t.key, !!P[t.key]); } catch(e) {} }, 0);
+    });
+  });
+
+  function announce(){
+    post('syntech:ready', { effectId: 'analog', version: '0.2.0', params: buildSchema() });
+  }
+  if (document.readyState === 'complete') announce();
+  else window.addEventListener('load', announce);
 
   function readFps(){
     var el = document.getElementById('fps-val');
@@ -2611,20 +2725,27 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     try { return !!(mr && mr.state === 'recording'); } catch(e) { return false; }
   }
 
-  function announce(){
-    post('syntech:ready', { effectId: 'analog', version: '0.1.0', params: [] });
-  }
-  if (document.readyState === 'complete') announce();
-  else window.addEventListener('load', announce);
-
   setInterval(function(){
     post('syntech:state', { fps: readFps(), srcMode: readSrc(), recording: readRec() });
   }, 1000);
 
-  // Shell is about to tear the iframe down: release every live resource
   window.addEventListener('message', function(ev){
     var d = ev && ev.data;
-    if (!d || d.type !== 'syntech:close') return;
+    if (!d || !d.type) return;
+
+    if (d.type === 'syntech:param:set' && d.payload) {
+      setParam(d.payload.key, d.payload.value);
+      return;
+    }
+    if (d.type === 'syntech:preset:apply' && d.payload && d.payload.params) {
+      Object.keys(d.payload.params).forEach(function(k){
+        setParam(k, d.payload.params[k]);
+      });
+      return;
+    }
+    if (d.type !== 'syntech:close') return;
+
+    // Shell is about to tear the iframe down: release every live resource
     try { if (mr && mr.state === 'recording') mr.stop(); } catch(e) {}
     try { stopWebcamStream(); } catch(e) {}
     try { stopCameraStream(); } catch(e) {}

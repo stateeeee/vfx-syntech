@@ -3126,7 +3126,8 @@ const bsMap={'bs-square':'square','bs-rect':'rect','bs-circle':'circle','bs-corn
 Object.keys(bsMap).forEach(id=>{document.getElementById(id).addEventListener('click',()=>{blobShape=bsMap[id];Object.keys(bsMap).forEach(b=>document.getElementById(b).classList.toggle('on',b===id));});});
 
 // Blob dashed toggle
-document.getElementById('btn-dashed').addEventListener('click',()=>{blobDashed=!blobDashed;document.getElementById('btn-dashed').classList.toggle('on',blobDashed);});
+/* dashed toggle listener lives in the UI bindings section below —
+   a duplicate here made every click flip the state twice (no-op) */
 
 // Panels labels toggle
 document.getElementById('btn-plabels').addEventListener('click',()=>{panelsLabelsVisible=!panelsLabelsVisible;document.getElementById('btn-plabels').classList.toggle('on',panelsLabelsVisible);if(!panelsLabelsVisible){panelLabelEls.forEach(el=>el.style.opacity='0');svgLines.innerHTML='';}});
