@@ -57,6 +57,102 @@ void main(){
   o = vec4(mix(base, ov.rgb, ov.a), 1.0);
 }`;
 
+/* ── PANELS mode: the tracker's 3D render mode, ported to raw WebGL2
+      (the standalone uses three.js; here a handful of perspective-
+      projected quads textured with regions of the input frame float
+      over a dimmed background, wobbling with turbulence noise). ── */
+
+const PANEL_VS = `#version 300 es
+layout(location=0) in vec2 aPos; /* unit quad -0.5..0.5 */
+uniform mat4 uMVP;
+uniform vec2 uSize;
+uniform vec4 uUvRect; /* u, v, uw, uh in input-texture space */
+out vec2 vUV;
+out vec2 vLocal;
+void main(){
+  vLocal = aPos + 0.5;
+  vUV = uUvRect.xy + vLocal * uUvRect.zw;
+  gl_Position = uMVP * vec4(aPos * uSize, 0.0, 1.0);
+}`;
+
+const PANEL_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+in vec2 vLocal;
+uniform sampler2D uTex;
+out vec4 o;
+void main(){
+  vec3 col = texture(uTex, clamp(vUV, 0.0, 1.0)).rgb;
+  // thin scanner-style frame on the panel edge
+  vec2 e = min(vLocal, 1.0 - vLocal);
+  float frame = 1.0 - smoothstep(0.0, 0.02, min(e.x, e.y));
+  col = mix(col, vec3(1.0), frame * 0.55);
+  o = vec4(col, 1.0);
+}`;
+
+const BG_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uTex;
+uniform float uOpacity;
+out vec4 o;
+void main(){ o = vec4(texture(uTex, vUV).rgb * uOpacity, 1.0); }`;
+
+/* fixed panel layout, mirroring the standalone's floating arrangement:
+   [w, h, ox, oy, oz, rx, ry, rz, u, v, uw, uh] */
+const PANEL_DEFS: number[][] = [
+  [2.3, 1.4, -2.2,  0.9, -0.6, -0.06,  0.28,  0.02, 0.02, 0.45, 0.42, 0.50],
+  [1.7, 1.1,  0.1,  1.2, -1.0,  0.10, -0.12, -0.03, 0.30, 0.50, 0.38, 0.45],
+  [2.0, 1.3,  2.3,  0.7, -0.3, -0.04, -0.30,  0.04, 0.55, 0.40, 0.42, 0.55],
+  [1.5, 1.0, -2.6, -0.9,  0.2,  0.08,  0.34, -0.05, 0.05, 0.05, 0.35, 0.40],
+  [2.4, 1.5, -0.2, -1.1,  0.5, -0.10,  0.06,  0.03, 0.28, 0.02, 0.45, 0.42],
+  [1.6, 1.05, 2.5, -1.0,  0.0,  0.06, -0.36, -0.02, 0.60, 0.06, 0.38, 0.40],
+  [1.3, 0.9,  0.0,  0.0,  1.2,  0.02,  0.10,  0.06, 0.35, 0.30, 0.30, 0.35],
+];
+
+/* minimal column-major mat4 helpers (enough for a perspective camera) */
+type Mat4 = Float32Array;
+const m4mul = (a: Mat4, b: Mat4): Mat4 => {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  }
+  return o;
+};
+const m4perspective = (fovyDeg: number, aspect: number, near: number, far: number): Mat4 => {
+  const f = 1 / Math.tan((fovyDeg * Math.PI) / 360);
+  const nf = 1 / (near - far);
+  return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
+};
+const m4lookAt = (ex: number, ey: number, ez: number): Mat4 => {
+  // looking at the origin, up = +Y
+  let zx = ex, zy = ey, zz = ez;
+  const zl = Math.hypot(zx, zy, zz) || 1;
+  zx /= zl; zy /= zl; zz /= zl;
+  let xx = -zz, xy = 0, xz = zx; // up × z
+  const xl = Math.hypot(xx, xy, xz) || 1;
+  xx /= xl; xy /= xl; xz /= xl;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return new Float32Array([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx * ex + xy * ey + xz * ez), -(yx * ex + yy * ey + yz * ez), -(zx * ex + zy * ey + zz * ez), 1,
+  ]);
+};
+const m4model = (x: number, y: number, z: number, rx: number, ry: number, rz: number, s: number): Mat4 => {
+  const cx = Math.cos(rx), sx = Math.sin(rx);
+  const cy = Math.cos(ry), sy = Math.sin(ry);
+  const cz = Math.cos(rz), sz = Math.sin(rz);
+  // R = Rz·Ry·Rx, scaled uniformly, then translated
+  return new Float32Array([
+    s * (cz * cy), s * (sz * cy), s * -sy, 0,
+    s * (cz * sy * sx - sz * cx), s * (sz * sy * sx + cz * cx), s * (cy * sx), 0,
+    s * (cz * sy * cx + sz * sx), s * (sz * sy * cx - cz * sx), s * (cy * cx), 0,
+    x, y, z, 1,
+  ]);
+};
+
 interface Blob { x: number; y: number; w: number; h: number; cx: number; cy: number; area: number }
 
 const AW = 160; // analysis buffer width; height follows aspect
@@ -69,12 +165,17 @@ export class BlobTrackerNode implements EngineNode {
   private values: Record<string, number> = {
     threshold: 127, minArea: 12, maxBlobs: 12, connWidth: 2, showBoxes: 1, showConnections: 1, dashedLines: 0, showLabels: 1,
     fxInvert: 0, fxThermal: 0, fxSecurity: 0, glitch: 0, fxOpacity: 100,
+    panelsMode: 0, panelScale: 1, panelTurbulence: 1, panelCamZ: 7, panelsBgOpacity: 50,
   };
 
   private prog: WebGLProgram | null = null;
+  private panelProg: WebGLProgram | null = null;
+  private bgProg: WebGLProgram | null = null;
+  private panelVao: WebGLVertexArrayObject | null = null;
   private target: Target | null = null;
   private overlayTex: WebGLTexture | null = null;
   private uniforms: Record<string, WebGLUniformLocation | null> = {};
+  private U: Record<string, Record<string, WebGLUniformLocation | null>> = {};
 
   private analysisCv = document.createElement('canvas');
   private analysisCtx = this.analysisCv.getContext('2d', { willReadFrequently: true })!;
@@ -84,9 +185,9 @@ export class BlobTrackerNode implements EngineNode {
   lastBlobs: Blob[] = [];
 
   constructor() {
-    const P = (key: string, label: string, min: number, max: number, step: number, hint: string, bool = false): ParamSchema => ({
+    const P = (key: string, label: string, min: number, max: number, step: number, hint: string, bool = false, group = 'TRACKER'): ParamSchema => ({
       key, label, type: bool ? 'boolean' : 'number', min, max, step,
-      value: this.values[key], group: 'TRACKER', reactive: !bool, aiHint: hint,
+      value: this.values[key], group, reactive: !bool, aiHint: hint,
     });
     this.params = [
       P('threshold', 'BLOB THRESHOLD', 0, 255, 1, 'Luma threshold; lower detects more and larger blobs'),
@@ -102,6 +203,11 @@ export class BlobTrackerNode implements EngineNode {
       P('fxSecurity', 'FX SECURITY', 0, 1, 1, 'Security-camera look inside blobs', true),
       P('glitch', 'GLITCH', 0, 20, 1, 'Digital glitch intensity inside blobs'),
       P('fxOpacity', 'FX OPACITY', 0, 100, 1, 'Opacity of the FX rendered inside blobs'),
+      P('panelsMode', 'PANELS MODE', 0, 1, 1, '3D floating video panels render mode (replaces the 2D tracker draw)', true, 'PANELS'),
+      P('panelScale', 'PANEL SCALE', 0.3, 2, 0.01, 'Scale of the 3D panels in panels render mode', false, 'PANELS'),
+      P('panelTurbulence', 'PANEL TURBULENCE', 0, 3, 0.1, 'Organic motion turbulence of the 3D panels', false, 'PANELS'),
+      P('panelCamZ', 'PANEL CAMERA Z', 4, 12, 0.1, '3D camera distance in panels render mode', false, 'PANELS'),
+      P('panelsBgOpacity', 'PANELS BG', 0, 100, 1, 'Opacity of the dimmed video behind the panels', false, 'PANELS'),
     ];
   }
 
@@ -119,6 +225,23 @@ export class BlobTrackerNode implements EngineNode {
     this.prog = compileProgram(gl, QUAD_VS, COMPOSITE_FS);
     ['uTex', 'uOverlay', 'uBlobs', 'uBlobCount', 'uTime', 'uFxInvert', 'uFxThermal', 'uFxSecurity', 'uFxGlitch', 'uFxOpacity']
       .forEach((u) => { this.uniforms[u] = gl.getUniformLocation(this.prog!, u); });
+
+    this.panelProg = compileProgram(gl, PANEL_VS, PANEL_FS);
+    this.bgProg = compileProgram(gl, QUAD_VS, BG_FS);
+    this.U.panel = {};
+    ['uMVP', 'uSize', 'uUvRect', 'uTex'].forEach((u) => { this.U.panel[u] = gl.getUniformLocation(this.panelProg!, u); });
+    this.U.bg = {};
+    ['uTex', 'uOpacity'].forEach((u) => { this.U.bg[u] = gl.getUniformLocation(this.bgProg!, u); });
+
+    // unit quad for the panels (triangle strip, -0.5..0.5)
+    this.panelVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.panelVao);
+    const buf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
     this.overlayTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -249,6 +372,60 @@ export class BlobTrackerNode implements EngineNode {
     }
   }
 
+  /** PANELS mode: dimmed background + floating perspective video panels */
+  private renderPanels(ctx: NodeRenderContext): WebGLTexture {
+    const { gl, inputTex, width, height, time, drawQuad } = ctx;
+    const v = this.values;
+    const t = time * 0.35 * v.panelTurbulence;
+    const PA = 0.35 * v.panelTurbulence;       // position wobble amplitude
+    const RA = 0.06 * v.panelTurbulence;       // rotation wobble amplitude
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target!.fbo);
+    gl.viewport(0, 0, width, height);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // dimmed source behind the panels
+    if (v.panelsBgOpacity > 0) {
+      gl.useProgram(this.bgProg);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, inputTex);
+      gl.uniform1i(this.U.bg.uTex, 0);
+      gl.uniform1f(this.U.bg.uOpacity, v.panelsBgOpacity / 100);
+      drawQuad();
+    }
+
+    // drifting camera looking at the origin
+    const camX = Math.sin(t * 0.28) * 0.6;
+    const camY = Math.sin(t * 0.22 + 1.7) * 0.4;
+    const viewProj = m4mul(m4perspective(55, width / Math.max(1, height), 0.1, 100), m4lookAt(camX, camY, v.panelCamZ));
+
+    gl.useProgram(this.panelProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, inputTex);
+    gl.uniform1i(this.U.panel.uTex, 0);
+    gl.bindVertexArray(this.panelVao);
+
+    // painter's order: farthest panels first (camera sits on +Z)
+    const order = PANEL_DEFS.map((d, i) => ({ d, i })).sort((a, b) => a.d[4] - b.d[4]);
+    for (const { d, i } of order) {
+      const [w, h, ox, oy, oz, rx, ry, rz, u, vv, uw, uh] = d;
+      const px = ox + Math.sin(t + i * 3.7) * PA;
+      const py = oy + Math.sin(t * 0.9 + i * 2.1) * PA * 0.8;
+      const pz = oz + Math.sin(t * 0.7 + i * 5.3) * PA * 0.3;
+      const prx = rx + Math.sin(t * 0.6 + i * 1.9 + 10) * RA;
+      const pry = ry + Math.sin(t * 0.6 + i * 2.7 + 10) * RA;
+      const prz = rz + Math.sin(t * 0.6 + i * 3.3 + 10) * RA * 0.5;
+      const mvp = m4mul(viewProj, m4model(px, py, pz, prx, pry, prz, v.panelScale));
+      gl.uniformMatrix4fv(this.U.panel.uMVP, false, mvp);
+      gl.uniform2f(this.U.panel.uSize, w, h);
+      gl.uniform4f(this.U.panel.uUvRect, u, vv, uw, uh);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    gl.bindVertexArray(null);
+    return this.target!.tex;
+  }
+
   render(ctx: NodeRenderContext): WebGLTexture {
     const { gl, inputTex, width, height, drawQuad, source } = ctx;
     if (!this.target || this.target.w !== width || this.target.h !== height) {
@@ -256,6 +433,8 @@ export class BlobTrackerNode implements EngineNode {
       this.target = createTarget(gl, width, height);
       if (this.overlayCv.width !== width || this.overlayCv.height !== height) this.resize(width, height);
     }
+
+    if (this.values.panelsMode >= 0.5) return this.renderPanels(ctx);
 
     if (source) {
       this.lastBlobs = this.detect(source);
@@ -293,7 +472,8 @@ export class BlobTrackerNode implements EngineNode {
   }
 
   dispose(gl: WebGL2RenderingContext): void {
-    if (this.prog) gl.deleteProgram(this.prog);
+    [this.prog, this.panelProg, this.bgProg].forEach((p) => { if (p) gl.deleteProgram(p); });
+    if (this.panelVao) gl.deleteVertexArray(this.panelVao);
     if (this.overlayTex) gl.deleteTexture(this.overlayTex);
     destroyTarget(gl, this.target);
     this.target = null;

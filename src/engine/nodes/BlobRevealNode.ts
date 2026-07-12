@@ -6,8 +6,10 @@ import { EngineNode, NodeRenderContext, Target, QUAD_VS, compileProgram, createT
    luma blobs detected on a 320×180 analysis buffer (same grid as
    the standalone), box-dilated, then turned into a reveal mask —
    the video shows only inside the (eroded + feathered) blob
-   windows over a black frame. Parameter keys match the standalone.
-   The MediaPipe person-rotoscope layer stays iframe-only for now.
+   windows over a black frame. With SEGMENTATION enabled the shared
+   PersonMask service adds the rotoscope layer on top, exactly like
+   the standalone composite (blob windows + person cutout).
+   Parameter keys match the standalone.
    ═══════════════════════════════════════════════════════════════ */
 
 const REVEAL_FS = `#version 300 es
@@ -15,20 +17,30 @@ precision highp float;
 in vec2 vUV;
 uniform sampler2D uTex;
 uniform sampler2D uMask;
+uniform sampler2D uSeg;   /* person confidence mask */
+uniform float uHasSeg;
+uniform float uSegThr;
 uniform float uOpacity;
 out vec4 o;
 void main(){
-  float m = texture(uMask, vec2(vUV.x, 1.0 - vUV.y)).a * uOpacity;
-  o = vec4(texture(uTex, vUV).rgb * m, 1.0);
+  vec2 tl = vec2(vUV.x, 1.0 - vUV.y);
+  float m = texture(uMask, tl).a;
+  if(uHasSeg > 0.5){
+    float pm = texture(uSeg, tl).r;
+    m = max(m, smoothstep(uSegThr - 0.15, uSegThr + 0.15, pm));
+  }
+  o = vec4(texture(uTex, vUV).rgb * m * uOpacity, 1.0);
 }`;
 
 // same analysis grid as the standalone effect
 const PW = 320;
 const PH = 180;
 
-interface Def { key: string; label: string; group: string; min: number; max: number; step: number; value: number; hint: string }
+interface Def { key: string; label: string; group: string; min: number; max: number; step: number; value: number; hint: string; bool?: boolean }
 
 const DEFS: Def[] = [
+  { key: 'segEnabled',   label: 'SEGMENTATION',   group: 'SEGMENTATION', min: 0, max: 1, step: 1, value: 0, hint: 'Person rotoscope layer on top of the blob windows (loads the segmentation model)', bool: true },
+  { key: 'segThreshold', label: 'SEG THRESHOLD',  group: 'SEGMENTATION', min: 5, max: 95, step: 1, value: 40, hint: 'Person segmentation mask threshold; lower keeps more of the person' },
   { key: 'lumThreshold', label: 'LUMA THRESHOLD', group: 'BLOB', min: 0, max: 255, step: 1, value: 170, hint: 'Luma threshold (0-255) for blob detection' },
   { key: 'minArea',      label: 'MIN BLOB AREA',  group: 'BLOB', min: 20, max: 5000, step: 20, value: 300, hint: 'Minimum blob area in pixels' },
   { key: 'maxBlobs',     label: 'MAX BLOBS',      group: 'BLOB', min: 1, max: 30, step: 1, value: 14, hint: 'Maximum number of reveal windows' },
@@ -50,6 +62,7 @@ export class BlobRevealNode implements EngineNode {
   private prog: WebGLProgram | null = null;
   private target: Target | null = null;
   private maskTex: WebGLTexture | null = null;
+  private segTex: WebGLTexture | null = null;
   private U: Record<string, WebGLUniformLocation | null> = {};
 
   private analysisCv = document.createElement('canvas');
@@ -68,9 +81,9 @@ export class BlobRevealNode implements EngineNode {
     this.analysisCv.height = PH;
     DEFS.forEach((d) => { this.v[d.key] = d.value; });
     this.params = DEFS.map((d) => ({
-      key: d.key, label: d.label, type: 'number' as const,
+      key: d.key, label: d.label, type: d.bool ? 'boolean' as const : 'number' as const,
       min: d.min, max: d.max, step: d.step, value: d.value,
-      group: d.group, reactive: true, aiHint: d.hint,
+      group: d.group, reactive: !d.bool, aiHint: d.hint,
     }));
   }
 
@@ -86,13 +99,19 @@ export class BlobRevealNode implements EngineNode {
 
   init(gl: WebGL2RenderingContext): void {
     this.prog = compileProgram(gl, QUAD_VS, REVEAL_FS);
-    ['uTex', 'uMask', 'uOpacity'].forEach((u) => { this.U[u] = gl.getUniformLocation(this.prog!, u); });
-    this.maskTex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    ['uTex', 'uMask', 'uSeg', 'uHasSeg', 'uSegThr', 'uOpacity'].forEach((u) => { this.U[u] = gl.getUniformLocation(this.prog!, u); });
+    const mkTex = () => {
+      const t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+    this.maskTex = mkTex();
+    this.segTex = mkTex();
   }
 
   resize(width: number, height: number): void {
@@ -210,6 +229,12 @@ export class BlobRevealNode implements EngineNode {
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, this.maskCv);
 
+    // person rotoscope layer (shared PersonMask service, when live)
+    const useSeg = this.v.segEnabled >= 0.5 && !!ctx.personMask;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.segTex);
+    if (useSeg) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, ctx.personMask!);
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.target.fbo);
     gl.viewport(0, 0, width, height);
     gl.useProgram(this.prog);
@@ -217,6 +242,9 @@ export class BlobRevealNode implements EngineNode {
     gl.bindTexture(gl.TEXTURE_2D, inputTex);
     gl.uniform1i(this.U.uTex, 0);
     gl.uniform1i(this.U.uMask, 1);
+    gl.uniform1i(this.U.uSeg, 2);
+    gl.uniform1f(this.U.uHasSeg, useSeg ? 1 : 0);
+    gl.uniform1f(this.U.uSegThr, this.v.segThreshold / 100);
     gl.uniform1f(this.U.uOpacity, this.v.opacity / 100);
     drawQuad();
     return this.target.tex;
@@ -225,6 +253,7 @@ export class BlobRevealNode implements EngineNode {
   dispose(gl: WebGL2RenderingContext): void {
     if (this.prog) gl.deleteProgram(this.prog);
     if (this.maskTex) gl.deleteTexture(this.maskTex);
+    if (this.segTex) gl.deleteTexture(this.segTex);
     destroyTarget(gl, this.target);
     this.target = null;
   }

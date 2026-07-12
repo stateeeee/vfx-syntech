@@ -22,6 +22,8 @@ export interface NodeRenderContext {
   drawQuad: () => void;
   /** the source element, for nodes that need CPU pixel analysis */
   source: TexImageSource | null;
+  /** person-segmentation confidence mask (top-left canvas), when available */
+  personMask: TexImageSource | null;
 }
 
 export interface EngineNode {
@@ -127,6 +129,8 @@ export class SynEngine {
   onFps?: (fps: number) => void;
   /** runs at the top of every frame — audio analysis + param modulation hook */
   beforeFrame?: (now: number) => void;
+  /** set by the host when a person-segmentation mask is available */
+  personMaskSource: TexImageSource | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -287,6 +291,7 @@ export class SynEngine {
       frame: this.frame,
       drawQuad: this.drawQuad,
       source: v,
+      personMask: this.personMaskSource,
     };
 
     let tex = this.sourceTex;

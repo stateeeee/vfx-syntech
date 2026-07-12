@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Power, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Power, Save, Sparkle, Trash2 } from 'lucide-react';
 import { SynEngine, EngineNode } from '../engine/SynEngine';
 import { NODE_FACTORY } from '../engine/nodes';
 import { AudioEngine } from '../engine/AudioEngine';
 import { VideoAnalyzer } from '../engine/VideoAnalyzer';
+import { PersonMask, PersonMaskState } from '../engine/PersonMask';
 import { ParamBus, MOD_SOURCES, ModSource, ParamBusState } from '../engine/params';
 import { ModuleId } from '../types';
 
@@ -54,10 +55,13 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
   const engineRef = useRef<SynEngine | null>(null);
   const audioRef = useRef<AudioEngine | null>(null);
   const videoAnRef = useRef<VideoAnalyzer | null>(null);
+  const maskRef = useRef<PersonMask | null>(null);
   const busRef = useRef<ParamBus | null>(null);
   if (!audioRef.current) audioRef.current = new AudioEngine();
   if (!videoAnRef.current) videoAnRef.current = new VideoAnalyzer();
+  if (!maskRef.current) maskRef.current = new PersonMask();
   if (!busRef.current) busRef.current = new ParamBus();
+  const [segState, setSegState] = useState<PersonMaskState>('off');
   const [fps, setFps] = useState(0);
   const [sourceKind, setSourceKind] = useState<'none' | 'video' | 'webcam'>('none');
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +96,12 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       const lv = audioRef.current!.tick(now);
       const va = videoAnRef.current!;
       va.tick(engine.source);
+      // person mask: lazy-loads the first time an enabled node asks for it
+      const mask = maskRef.current!;
+      const wantsMask = engine.chain.some((n) => n.enabled && Number(n.getParam('segEnabled')) >= 0.5);
+      if (wantsMask) mask.enable();
+      if (wantsMask && mask.state === 'ready') mask.tick(engine.source as HTMLVideoElement | null, now);
+      engine.personMaskSource = wantsMask && mask.ready ? mask.maskCanvas : null;
       busRef.current!.apply(engine.chain, {
         bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat,
         motion: va.motion, bright: va.bright,
@@ -102,6 +112,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
     engineRef.current = engine;
     return () => {
       audioRef.current?.stop();
+      maskRef.current?.dispose();
       engine.dispose();
       engineRef.current = null;
     };
@@ -113,6 +124,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       const lv = audioRef.current!.levels;
       const va = videoAnRef.current!;
       setSignals({ bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat, bpm: lv.bpm, motion: va.motion, bright: va.bright });
+      setSegState(maskRef.current!.state);
     }, 150);
     return () => clearInterval(id);
   }, []);
@@ -181,6 +193,80 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
   };
 
   const deletePreset = (name: string) => writePresets(presets.filter((p) => p.name !== name));
+
+  /* ── Gemini pilots the native chain: the whole rack is exposed as one
+        namespaced ParamSchema (nodeId.param) and the returned preset is
+        written back through the ParamBus — same §4.4 contract as manual ── */
+
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMsg, setAiMsg] = useState('');
+
+  const chainParameters = (): Record<string, { label: string; value: number; min: number; max: number; step: number; hint: string }> => {
+    const engine = engineRef.current;
+    const out: ReturnType<typeof chainParameters> = {};
+    if (!engine) return out;
+    engine.chain.forEach((node) => {
+      out[`${node.id}.enabled`] = {
+        label: `${node.name} — ENABLED`, value: node.enabled ? 1 : 0, min: 0, max: 1, step: 1,
+        hint: `(on/off switch) Enables the ${node.name} effect in the chain`,
+      };
+      node.params.forEach((p) => {
+        out[`${node.id}.${p.key}`] = {
+          label: `${node.name} — ${p.label}`,
+          value: p.type === 'boolean' ? Number(node.getParam(p.key)) : busRef.current!.getBase(node, p.key),
+          min: p.min ?? 0, max: p.max ?? 1, step: p.step ?? 1,
+          hint: `${p.type === 'boolean' ? '(on/off switch) ' : ''}${p.aiHint ?? ''}`.trim(),
+        };
+      });
+    });
+    return out;
+  };
+
+  const applyAiPreset = (preset: Record<string, unknown>): number => {
+    const engine = engineRef.current;
+    if (!engine) return 0;
+    let applied = 0;
+    Object.entries(preset).forEach(([k, raw]) => {
+      const dot = k.indexOf('.');
+      if (dot < 1) return;
+      const node = engine.chain.find((n) => n.id === k.slice(0, dot));
+      const key = k.slice(dot + 1);
+      const v = Number(raw);
+      if (!node || isNaN(v)) return;
+      if (key === 'enabled') { node.enabled = v >= 0.5; applied++; return; }
+      const p = node.params.find((x) => x.key === key);
+      if (!p) return;
+      if (p.type === 'boolean') node.setParam(key, v);
+      else busRef.current!.setBase(node, key, Math.max(p.min ?? -Infinity, Math.min(p.max ?? Infinity, v)));
+      applied++;
+    });
+    bump();
+    return applied;
+  };
+
+  const runAiOptimize = async () => {
+    if (aiBusy) return;
+    setAiBusy(true);
+    setAiMsg('consulting gemini…');
+    try {
+      const res = await fetch('/api/gemini/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeModule: 'chain', parameters: chainParameters(), prompt: aiPrompt }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const applied = applyAiPreset(data.preset ?? {});
+      setAiMsg(applied > 0
+        ? `✓ ${applied} parameters set${data.isFallback ? ' (offline preset)' : ''}`
+        : '✗ no matching parameters in the reply');
+    } catch (e) {
+      setAiMsg('✗ ' + (e as Error).message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const loadVideo = async (file: File | null) => {
     if (!file || !engineRef.current) return;
@@ -529,7 +615,41 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
                 Route any signal onto a reactive parameter with the <b className="text-amber-400">~</b> chip next to its value.
               </p>
             )}
+            {segState !== 'off' && (
+              <div data-testid="seg-status" className={`font-mono text-[8px] uppercase tracking-widest ${
+                segState === 'ready' ? 'text-gold-500' : segState === 'loading' ? 'text-amber-400' : 'text-red-400'
+              }`}>
+                SEG: {segState === 'ready' ? 'READY' : segState === 'loading' ? 'LOADING MODEL…' : 'UNAVAILABLE'}
+              </div>
+            )}
             {error && <div className="font-mono text-[9px] text-red-400">{error}</div>}
+          </div>
+
+          {/* Gemini drives the whole chain: decision #6 — AI is one of the automations */}
+          <div className="space-y-2">
+            <div className="font-mono text-[9px] font-extrabold tracking-widest text-gold-500 uppercase border-b border-gold-500/15 pb-1">AI Optimizer</div>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                data-testid="ai-prompt"
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') runAiOptimize(); }}
+                placeholder="e.g. cinematic VHS nightmare"
+                className={`flex-1 min-w-0 font-mono text-[9px] px-2 py-1.5 rounded border bg-transparent outline-none ${
+                  isDayMode ? 'border-neutral-300 text-neutral-800 placeholder-neutral-400' : 'border-gold-500/25 text-white placeholder-neutral-600'
+                }`}
+              />
+              <button
+                onClick={runAiOptimize}
+                data-testid="ai-optimize"
+                disabled={aiBusy}
+                className="flex items-center gap-1 font-mono text-[9px] font-bold uppercase px-2 py-1.5 rounded bg-gold-500 text-black hover:bg-gold-400 disabled:opacity-40 cursor-pointer"
+              >
+                <Sparkle className="w-3 h-3" /> Go
+              </button>
+            </div>
+            {aiMsg && <div data-testid="ai-msg" className="font-mono text-[8px] text-gold-500">{aiMsg}</div>}
           </div>
 
           {/* chain presets: full rack state in localStorage (decision #9) */}
