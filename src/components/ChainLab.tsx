@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Power } from 'lucide-react';
+import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Power, Save, Trash2 } from 'lucide-react';
 import { SynEngine, EngineNode } from '../engine/SynEngine';
 import { NODE_FACTORY } from '../engine/nodes';
-import { AudioEngine, AudioLevels } from '../engine/AudioEngine';
-import { ParamBus, AUDIO_SOURCES, AudioSource } from '../engine/params';
+import { AudioEngine } from '../engine/AudioEngine';
+import { VideoAnalyzer } from '../engine/VideoAnalyzer';
+import { ParamBus, MOD_SOURCES, ModSource, ParamBusState } from '../engine/params';
 import { ModuleId } from '../types';
 
 interface ChainLabProps {
@@ -21,6 +22,27 @@ interface ChainLabProps {
 const RACK_ORDER: ModuleId[] = ['blob_tracker', 'blob_reveal', 'bokeh', 'analog', 'anamorphic_lab'];
 const DEFAULT_ENABLED: ModuleId[] = ['blob_tracker', 'analog'];
 
+/** a saved chain: rack order + enabled set + bases/routes + boolean params */
+interface ChainPreset {
+  name: string;
+  savedAt: number;
+  order: ModuleId[];
+  enabled: ModuleId[];
+  bools: Record<string, number>;
+  bus: ParamBusState;
+}
+
+const PRESETS_KEY = 'syntech.chainPresets';
+
+const readPresets = (): ChainPreset[] => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PRESETS_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+};
+
 /**
  * CHAIN LAB — the native SynEngine surface (PLAN.md phase 5):
  * one WebGL context, all five effects composed in series on the same
@@ -31,14 +53,18 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
   const fileRef = useRef<HTMLInputElement | null>(null);
   const engineRef = useRef<SynEngine | null>(null);
   const audioRef = useRef<AudioEngine | null>(null);
+  const videoAnRef = useRef<VideoAnalyzer | null>(null);
   const busRef = useRef<ParamBus | null>(null);
   if (!audioRef.current) audioRef.current = new AudioEngine();
+  if (!videoAnRef.current) videoAnRef.current = new VideoAnalyzer();
   if (!busRef.current) busRef.current = new ParamBus();
   const [fps, setFps] = useState(0);
   const [sourceKind, setSourceKind] = useState<'none' | 'video' | 'webcam'>('none');
   const [error, setError] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
-  const [levels, setLevels] = useState<AudioLevels>({ bass: 0, loud: 0, treble: 0, beat: 0, bpm: null });
+  const [signals, setSignals] = useState({ bass: 0, loud: 0, treble: 0, beat: 0, motion: 0, bright: 0, bpm: null as number | null });
+  const [presets, setPresets] = useState<ChainPreset[]>(readPresets);
+  const [presetName, setPresetName] = useState('');
   // bump to re-read node state after any mutation (params live in the nodes)
   const [, setRev] = useState(0);
   const bump = () => setRev((r) => r + 1);
@@ -59,12 +85,17 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       node.enabled = active.includes(id);
       engine.addNode(node);
     });
-    // manual/auto control matrix (PLAN §4.4): bases live in the bus, the
-    // audio offsets are layered on top of them at the start of every frame
+    // manual/auto control matrix (PLAN §4.4): bases live in the bus, audio
+    // and video signal offsets are layered on top at the start of every frame
     busRef.current!.snapshot(engine.chain);
     engine.beforeFrame = (now) => {
       const lv = audioRef.current!.tick(now);
-      busRef.current!.apply(engine.chain, lv);
+      const va = videoAnRef.current!;
+      va.tick(engine.source);
+      busRef.current!.apply(engine.chain, {
+        bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat,
+        motion: va.motion, bright: va.bright,
+      });
     };
     engine.onFps = setFps;
     engine.start();
@@ -76,19 +107,21 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
     };
   }, []);
 
-  // low-rate UI mirror of the live audio levels (meters + modulated readouts)
+  // low-rate UI mirror of the live signals (meters + modulated readouts)
   useEffect(() => {
-    if (!audioOn) return;
-    const id = setInterval(() => setLevels({ ...audioRef.current!.levels }), 120);
+    const id = setInterval(() => {
+      const lv = audioRef.current!.levels;
+      const va = videoAnRef.current!;
+      setSignals({ bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat, bpm: lv.bpm, motion: va.motion, bright: va.bright });
+    }, 150);
     return () => clearInterval(id);
-  }, [audioOn]);
+  }, []);
 
   const toggleAudio = async () => {
     const audio = audioRef.current!;
     if (audio.active) {
-      audio.stop();
+      audio.stop(); // zeroes its levels; the signals mirror picks that up
       setAudioOn(false);
-      setLevels({ bass: 0, loud: 0, treble: 0, beat: 0, bpm: null });
       return;
     }
     try {
@@ -99,6 +132,55 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
       setError('Audio in: ' + (e as Error).message);
     }
   };
+
+  /* ── chain presets (decision #9: localStorage is enough for v1) ── */
+
+  const writePresets = (next: ChainPreset[]) => {
+    setPresets(next);
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+  };
+
+  const savePreset = () => {
+    const engine = engineRef.current;
+    const name = presetName.trim();
+    if (!engine || !name) return;
+    const bools: Record<string, number> = {};
+    engine.chain.forEach((n) => n.params.forEach((p) => {
+      if (p.type === 'boolean') bools[`${n.id}.${p.key}`] = Number(n.getParam(p.key));
+    }));
+    const preset: ChainPreset = {
+      name,
+      savedAt: Date.now(),
+      order: engine.chain.map((n) => n.id as ModuleId),
+      enabled: engine.chain.filter((n) => n.enabled).map((n) => n.id as ModuleId),
+      bools,
+      bus: busRef.current!.serialize(),
+    };
+    writePresets([...presets.filter((p) => p.name !== name), preset]);
+    setPresetName('');
+  };
+
+  const loadPreset = (preset: ChainPreset) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const byId = new Map(engine.chain.map((n) => [n.id, n]));
+    const ordered: EngineNode[] = [];
+    preset.order.forEach((id) => {
+      const n = byId.get(id);
+      if (n) { ordered.push(n); byId.delete(id); }
+    });
+    byId.forEach((n) => ordered.push(n)); // nodes unknown to the preset keep their spot at the tail
+    engine.chain = ordered;
+    engine.chain.forEach((n) => { n.enabled = preset.enabled.includes(n.id as ModuleId); });
+    Object.entries(preset.bools ?? {}).forEach(([k, v]) => {
+      const dot = k.indexOf('.');
+      engine.chain.find((n) => n.id === k.slice(0, dot))?.setParam(k.slice(dot + 1), v);
+    });
+    busRef.current!.restore(preset.bus, engine.chain);
+    bump();
+  };
+
+  const deletePreset = (name: string) => writePresets(presets.filter((p) => p.name !== name));
 
   const loadVideo = async (file: File | null) => {
     if (!file || !engineRef.current) return;
@@ -259,9 +341,9 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
               const base = bus.getBase(node, p.key);
               const mod = bus.getMod(node, p.key);
               const dec = (p.step ?? 1) < 1 ? 2 : 0;
-              // cycle the audio route: off → bass → loud → treble → beat → off
+              // cycle the route: off → bass → loud → treble → beat → motion → bright → off
               const cycleMod = () => {
-                const order: (AudioSource | null)[] = [null, ...AUDIO_SOURCES];
+                const order: (ModSource | null)[] = [null, ...MOD_SOURCES];
                 const next = order[(order.indexOf(mod?.source ?? null) + 1) % order.length];
                 bus.setMod(node, p.key, next ? { source: next, amount: mod?.amount ?? 0.5 } : null);
                 bump();
@@ -412,27 +494,93 @@ export default function ChainLab({ isDayMode, onBack, initialChain }: ChainLabPr
                   <div key={band} className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
                     <span className={`w-9 ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>{band}</span>
                     <div className={`flex-1 h-1 rounded overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-white/10'}`}>
-                      <div className="h-full bg-amber-400 transition-[width] duration-100" style={{ width: `${Math.min(100, Math.round(levels[band] * 100))}%` }} />
+                      <div className="h-full bg-amber-400 transition-[width] duration-100" style={{ width: `${Math.min(100, Math.round(signals[band] * 100))}%` }} />
                     </div>
-                    <span data-testid={`audio-${band}`} className="w-6 text-right text-amber-400">{Math.round(levels[band] * 100)}</span>
+                    <span data-testid={`audio-${band}`} className="w-6 text-right text-amber-400">{Math.round(signals[band] * 100)}</span>
                   </div>
                 ))}
                 <div className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
                   <span className={isDayMode ? 'text-neutral-500' : 'text-neutral-500'}>beat</span>
                   <span
                     className="w-2 h-2 rounded-full bg-amber-400"
-                    style={{ opacity: 0.15 + levels.beat * 0.85 }}
+                    style={{ opacity: 0.15 + signals.beat * 0.85 }}
                   />
                   <span className={`ml-auto ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>
-                    BPM <b className="text-amber-400">{levels.bpm ?? '--'}</b>
+                    BPM <b className="text-amber-400">{signals.bpm ?? '--'}</b>
                   </span>
                 </div>
-                <p className={`font-mono text-[8px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-600'}`}>
-                  Route audio onto any reactive parameter with the <b className="text-amber-400">~</b> chip next to its value.
-                </p>
               </div>
             )}
+            {sourceKind !== 'none' && (
+              <div className="space-y-1">
+                {(['motion', 'bright'] as const).map((band) => (
+                  <div key={band} className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
+                    <span className={`w-9 ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>{band}</span>
+                    <div className={`flex-1 h-1 rounded overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-white/10'}`}>
+                      <div className="h-full bg-gold-500 transition-[width] duration-100" style={{ width: `${Math.min(100, Math.round(signals[band] * 100))}%` }} />
+                    </div>
+                    <span data-testid={`signal-${band}`} className="w-6 text-right text-gold-500">{Math.round(signals[band] * 100)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(audioOn || sourceKind !== 'none') && (
+              <p className={`font-mono text-[8px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-600'}`}>
+                Route any signal onto a reactive parameter with the <b className="text-amber-400">~</b> chip next to its value.
+              </p>
+            )}
             {error && <div className="font-mono text-[9px] text-red-400">{error}</div>}
+          </div>
+
+          {/* chain presets: full rack state in localStorage (decision #9) */}
+          <div className="space-y-2">
+            <div className="font-mono text-[9px] font-extrabold tracking-widest text-gold-500 uppercase border-b border-gold-500/15 pb-1">Presets</div>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                data-testid="preset-name"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
+                placeholder="preset name"
+                className={`flex-1 min-w-0 font-mono text-[9px] px-2 py-1.5 rounded border bg-transparent outline-none ${
+                  isDayMode ? 'border-neutral-300 text-neutral-800 placeholder-neutral-400' : 'border-gold-500/25 text-white placeholder-neutral-600'
+                }`}
+              />
+              <button
+                onClick={savePreset}
+                data-testid="preset-save"
+                disabled={!presetName.trim()}
+                className="flex items-center gap-1 font-mono text-[9px] font-bold uppercase px-2 py-1.5 rounded border border-gold-500/30 text-gold-500 hover:bg-gold-500/10 disabled:opacity-30 cursor-pointer"
+              >
+                <Save className="w-3 h-3" /> Save
+              </button>
+            </div>
+            {presets.length === 0 && (
+              <p className={`font-mono text-[8px] ${isDayMode ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                No saved chains yet — the whole rack (order, bypass, params, routes) is stored.
+              </p>
+            )}
+            {presets.map((p) => (
+              <div key={p.name} className={`flex items-center gap-1.5 font-mono text-[9px] px-2 py-1.5 rounded border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-white/10 bg-black/40'}`}>
+                <span className={`flex-1 truncate ${isDayMode ? 'text-neutral-800' : 'text-white'}`}>{p.name}</span>
+                <button
+                  onClick={() => loadPreset(p)}
+                  data-testid={`preset-load-${p.name}`}
+                  className="px-1.5 py-0.5 rounded bg-gold-500 text-black font-bold uppercase text-[8px] hover:bg-gold-400 cursor-pointer"
+                >
+                  Load
+                </button>
+                <button
+                  onClick={() => deletePreset(p.name)}
+                  data-testid={`preset-del-${p.name}`}
+                  title="Delete preset"
+                  className="p-1 rounded border border-gold-500/20 text-neutral-500 hover:text-red-400 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
           </div>
 
           <div className="space-y-2">
