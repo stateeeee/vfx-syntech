@@ -47,6 +47,29 @@ export default function App() {
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
   // Chain Lab (native SynEngine): effects composed in series, phase 5 MVP
   const [chainOpen, setChainOpen] = useState(false);
+
+  // Signal chain built by linking hub nodes on the brain graph (phase 5):
+  // dragging hub A onto hub B appends the link; the chain persists per-browser
+  const [graphChain, setGraphChain] = useState<ModuleId[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('syntech.graphChain') ?? '[]');
+      return Array.isArray(saved) ? saved.filter((id) => id in EFFECTS_REGISTRY) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('syntech.graphChain', JSON.stringify(graphChain)); } catch { /* private mode */ }
+  }, [graphChain]);
+
+  const handleChainLink = (from: ModuleId, to: ModuleId) => {
+    if (from === to) return;
+    setGraphChain((prev) => {
+      // extend the chain when the drag starts from its tail; otherwise start over
+      if (prev.length && prev[prev.length - 1] === from && !prev.includes(to)) return [...prev, to];
+      return [from, to];
+    });
+  };
   const [effectTelemetry, setEffectTelemetry] = useState<EffectTelemetry | null>(null);
 
   // Sender registered by the open effect's bridge (param:set / preset:apply)
@@ -417,7 +440,11 @@ export default function App() {
 
         {/* MAIN BODY: chain lab, full-terminal effect view, or the dashboard grid */}
         {chainOpen ? (
-          <ChainLab isDayMode={isDayMode} onBack={() => setChainOpen(false)} />
+          <ChainLab
+            isDayMode={isDayMode}
+            onBack={() => setChainOpen(false)}
+            initialChain={graphChain.length >= 2 ? graphChain : undefined}
+          />
         ) : openEffectId && EFFECTS_REGISTRY[openEffectId].iframeSrc ? (
           <EffectHost
             module={modules.find((m) => m.id === openEffectId) || currentModule}
@@ -649,6 +676,10 @@ export default function App() {
                 signalSource={signalSource}
                 isStreaming={isStreaming}
                 isDayMode={isDayMode}
+                chain={graphChain}
+                onChainLink={handleChainLink}
+                onChainOpen={() => { handleEffectClose(); setChainOpen(true); }}
+                onChainClear={() => setGraphChain([])}
               />
             </div>
           </section>

@@ -10,6 +10,13 @@ interface VfxCanvasProps {
   signalSource: SignalSource;
   isStreaming: boolean;
   isDayMode?: boolean;
+  /** Current signal chain built by linking hub nodes (PLAN.md phase 5) */
+  chain?: ModuleId[];
+  /** Drag released from one hub onto another: link them into the chain */
+  onChainLink?: (from: ModuleId, to: ModuleId) => void;
+  /** Open the Chain Lab with the current chain */
+  onChainOpen?: () => void;
+  onChainClear?: () => void;
 }
 
 interface GraphNode {
@@ -45,16 +52,25 @@ export default function VfxCanvas({
   signalSource,
   isStreaming,
   isDayMode = false,
+  chain,
+  onChainLink,
+  onChainOpen,
+  onChainClear,
 }: VfxCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
 
-  // Latest callback, readable from inside the long-lived render loop closure
+  // Latest callbacks/state, readable from inside the long-lived render loop closure
   const onModuleOpenRef = useRef(onModuleOpen);
   onModuleOpenRef.current = onModuleOpen;
-  
-  // Mouse coordinates tracking
-  const mouseRef = useRef({ x: -1000, y: -1000, clicked: false });
+  const onChainLinkRef = useRef(onChainLink);
+  onChainLinkRef.current = onChainLink;
+  const chainRef = useRef(chain);
+  chainRef.current = chain;
+
+  // Mouse coordinates tracking + hub link-drag state (index of drag source hub)
+  const mouseRef = useRef({ x: -1000, y: -1000, pressed: false, released: false, downX: 0, downY: 0 });
+  const dragFromRef = useRef(-1);
 
   // Audio state
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -131,10 +147,19 @@ export default function VfxCanvas({
   const handleMouseLeave = () => {
     mouseRef.current.x = -1000;
     mouseRef.current.y = -1000;
+    mouseRef.current.pressed = false;
+    dragFromRef.current = -1;
   };
 
   const handleMouseDown = () => {
-    mouseRef.current.clicked = true;
+    mouseRef.current.pressed = true;
+    mouseRef.current.downX = mouseRef.current.x;
+    mouseRef.current.downY = mouseRef.current.y;
+  };
+
+  const handleMouseUp = () => {
+    mouseRef.current.pressed = false;
+    mouseRef.current.released = true;
   };
 
   // Canvas drawing loop
@@ -328,6 +353,8 @@ export default function VfxCanvas({
     initializeGraph(600, 400);
 
     let frameCount = 0;
+    // press edge latch: a link-drag only arms when the press STARTS on a hub
+    let pressArmed = false;
 
     const render = () => {
       frameCount++;
@@ -552,25 +579,39 @@ export default function VfxCanvas({
         }
       }
 
-      // Change cursor to pointer if hovering on switchable modules
-      const isHoveringHub = hoveredNodeIdx !== -1;
-      if (isHoveringHub) {
-        canvas.style.cursor = 'pointer';
-        if (mouseRef.current.clicked) {
-          const clickedHub = nodes[hoveredNodeIdx];
-          if (clickedHub.moduleId) {
-            setActiveModule(clickedHub.moduleId);
-            onModuleOpenRef.current?.(clickedHub.moduleId);
+      // -------------------------------------------------------------
+      // HUB LINK-DRAG STATE MACHINE (PLAN.md phase 5: linking two hub
+      // nodes on the brain graph creates the effect chain). A press on
+      // a hub arms a drag; releasing on another hub links them, while
+      // releasing in place (a plain click) opens the effect as before.
+      // -------------------------------------------------------------
+      if (mouseRef.current.pressed && !pressArmed) {
+        pressArmed = true;
+        if (hoveredNodeIdx !== -1) dragFromRef.current = hoveredNodeIdx;
+      } else if (!mouseRef.current.pressed && pressArmed && !mouseRef.current.released) {
+        pressArmed = false;
+      }
+      if (mouseRef.current.released) {
+        const fromIdx = dragFromRef.current;
+        if (fromIdx !== -1 && nodes[fromIdx]?.moduleId) {
+          const moved = Math.hypot(
+            mouseRef.current.x - mouseRef.current.downX,
+            mouseRef.current.y - mouseRef.current.downY
+          );
+          if (hoveredNodeIdx !== -1 && hoveredNodeIdx !== fromIdx && nodes[hoveredNodeIdx].moduleId) {
+            onChainLinkRef.current?.(nodes[fromIdx].moduleId!, nodes[hoveredNodeIdx].moduleId!);
+          } else if (moved < 6 && hoveredNodeIdx === fromIdx) {
+            setActiveModule(nodes[fromIdx].moduleId!);
+            onModuleOpenRef.current?.(nodes[fromIdx].moduleId!);
           }
         }
-      } else {
-        canvas.style.cursor = 'default';
+        dragFromRef.current = -1;
+        mouseRef.current.released = false;
+        pressArmed = false;
       }
-      
-      // Reset mouse clicked latch
-      if (mouseRef.current.clicked) {
-        mouseRef.current.clicked = false;
-      }
+
+      const isLinkDragging = dragFromRef.current !== -1 && mouseRef.current.pressed;
+      canvas.style.cursor = isLinkDragging ? 'crosshair' : hoveredNodeIdx !== -1 ? 'pointer' : 'default';
 
       const activeHubNode = nodes.find((n) => n.moduleId === activeModule);
 
@@ -673,6 +714,72 @@ export default function VfxCanvas({
         ctx.arc(px, py, p.type === 'core_to_hub' ? 1.8 : 1.1, 0, Math.PI * 2);
         ctx.fill();
       });
+
+      // -------------------------------------------------------------
+      // DRAW THE SIGNAL CHAIN (bright persistent links between chained
+      // hubs, flowing signal dots + arrowheads) AND THE LIVE LINK DRAG
+      // -------------------------------------------------------------
+      const chainIds = chainRef.current ?? [];
+      for (let ci = 0; ci < chainIds.length - 1; ci++) {
+        const a = nodes.find((n) => n.moduleId === chainIds[ci]);
+        const b = nodes.find((n) => n.moduleId === chainIds[ci + 1]);
+        if (!a || !b) continue;
+        ctx.save();
+        ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.9)' : 'rgba(212, 175, 55, 0.9)';
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = '#D4AF37';
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // direction arrowhead at 62% of the link
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        const axp = a.x + (b.x - a.x) * 0.62;
+        const ayp = a.y + (b.y - a.y) * 0.62;
+        ctx.fillStyle = isDayMode ? '#a07614' : '#D4AF37';
+        ctx.beginPath();
+        ctx.moveTo(axp + Math.cos(ang) * 6, ayp + Math.sin(ang) * 6);
+        ctx.lineTo(axp + Math.cos(ang + 2.5) * 5, ayp + Math.sin(ang + 2.5) * 5);
+        ctx.lineTo(axp + Math.cos(ang - 2.5) * 5, ayp + Math.sin(ang - 2.5) * 5);
+        ctx.closePath();
+        ctx.fill();
+        // flowing signal dot
+        const flow = ((frameCount + ci * 30) % 60) / 60;
+        const fx = a.x + (b.x - a.x) * flow;
+        const fy = a.y + (b.y - a.y) * flow;
+        ctx.fillStyle = isDayMode ? `rgba(120, 80, 10, ${Math.sin(flow * Math.PI)})` : `rgba(255, 255, 255, ${Math.sin(flow * Math.PI)})`;
+        ctx.beginPath();
+        ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (isLinkDragging) {
+        const fromNode = nodes[dragFromRef.current];
+        if (fromNode) {
+          ctx.save();
+          ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.85)' : 'rgba(212, 175, 55, 0.85)';
+          ctx.lineWidth = 1.4;
+          ctx.setLineDash([6, 5]);
+          ctx.beginPath();
+          ctx.moveTo(fromNode.x, fromNode.y);
+          ctx.lineTo(mouseRef.current.x, mouseRef.current.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          // snap ring on the hovered target hub
+          if (hoveredNodeIdx !== -1 && hoveredNodeIdx !== dragFromRef.current) {
+            const tgt = nodes[hoveredNodeIdx];
+            ctx.strokeStyle = isDayMode ? '#7a6538' : '#ffffff';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(tgt.x, tgt.y, tgt.size + 9, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
 
       // -------------------------------------------------------------
       // DRAW GRAPH NODES (SPARKLES & HUBS)
@@ -842,15 +949,43 @@ export default function VfxCanvas({
   }, [activeModule, modules, signalSource, isStreaming, micActive]);
 
   return (
-    <div 
+    <div
       className="relative w-full h-full min-h-[300px] border border-gold-800/40 bg-[#050505] overflow-hidden rounded-md gold-glow-border"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
     >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
-      
 
+      {/* Signal chain HUD: linking hub nodes builds the chain (phase 5) */}
+      {chain && chain.length >= 2 && (
+        <div
+          data-testid="graph-chain-hud"
+          className={`absolute left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-3 px-3 py-2 rounded border font-mono text-[9px] uppercase tracking-widest ${
+            isDayMode ? 'bg-white/90 border-gold-500/50 text-neutral-700' : 'bg-black/85 border-gold-500/40 text-neutral-300'
+          }`}
+        >
+          <span className="text-gold-500 font-extrabold">CHAIN</span>
+          <span data-testid="graph-chain-label">{chain.map((id) => id.replace(/_/g, ' ').toUpperCase()).join(' → ')}</span>
+          <button
+            type="button"
+            data-testid="graph-chain-open"
+            onClick={onChainOpen}
+            className="px-2 py-1 rounded bg-gold-500 text-black font-bold hover:bg-gold-400 cursor-pointer"
+          >
+            Open Chain Lab
+          </button>
+          <button
+            type="button"
+            data-testid="graph-chain-clear"
+            onClick={onChainClear}
+            className="px-2 py-1 rounded border border-gold-500/40 text-gold-500 hover:bg-gold-500/10 cursor-pointer"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {micPermissionDenied && signalSource === 'MIC_AUDIO_03' && (
         <div className="absolute inset-x-4 bottom-14 flex items-center gap-2 px-3 py-2 bg-red-950/80 border border-red-900/40 text-red-200 rounded font-mono text-xs">
