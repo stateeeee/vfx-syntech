@@ -45,9 +45,21 @@
 > localStorage (decisione #9): salvano l'intero rack — ordine nodi, bypass,
 > basi numeriche, booleani e route di modulazione — con load in place e
 > persistenza al reload (15/15 check; requisito preset della DoD §11 coperto
-> anche per la catena nativa). Prossimi passi Fase 5: parità visiva più
-> profonda dei nodi (maschera MediaPipe nei nodi Bokeh/Blob Reveal, pannelli 3D
-> del tracker), Gemini che pilota la catena nativa (ParamBus come ParamSchema).
+> anche per la catena nativa).
+> **Gemini pilota la catena nativa ✅**: AI Optimizer nel Chain Lab — l'intero
+> rack esposto come ParamSchema namespaced (`nodeId.param` + interruttori
+> `nodeId.enabled`) a `/api/gemini/optimize`, preset applicato via ParamBus.
+> **Pannelli 3D nativi ✅**: modalità PANELS del tracker in WebGL2 puro (quad
+> prospettici con turbolenza su sfondo attenuato — panelScale/Turbulence/CamZ/
+> BgOpacity, chiavi come lo standalone). **Maschera persona nei nodi ✅ (hook)**:
+> servizio `PersonMask` condiviso (MediaPipe selfie segmentation lazy da CDN,
+> 10 Hz) → SEGMENTATION su Bokeh (soggetto nitido) e Blob Reveal (rotoscope);
+> degradazione controllata verificata al pixel (output identico senza maschera,
+> stato SEG: READY/LOADING/UNAVAILABLE nel Chain Lab) — 13/13 check +
+> regressione completa 41/41. ⚠ il percorso READY va provato manualmente con
+> webcam/persona reale (l'ambiente di verifica non raggiunge la CDN).
+> Prossimi passi Fase 5/6: vendoring MediaPipe (affidabilità offline), estetica
+> a design token, performance pass 60fps.
 
 ---
 
