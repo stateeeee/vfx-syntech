@@ -103,17 +103,17 @@ FORMAT RULES:
       fallbackReply += "As requested, local sensors suggest a dramatic organic tracking look: **Threshold** at 96 for wide blob coverage, **Datamosh** at 18 with **Glitch** at 12 for digital decay, and **Line Glow** at 65 for luminous connections.\n\nPRESET:{\"threshold\":96,\"datamosh\":18,\"glitch\":12,\"connGlow\":65,\"fxOpacity\":100}";
       extractedPreset = { threshold: 96, datamosh: 18, glitch: 12, connGlow: 65, fxOpacity: 100 };
     } else if (activeModuleId === "analog") {
-      fallbackReply += "Local scanlines report optimal **Analog** settings: Raise **CRT Emulation** to 80% to bring out phosphor grids, with **Chromatic Aberration** at 65% for retro distortion.\n\nPRESET:{\"crtEmulation\":80,\"syncJitter\":45,\"chromaticAberration\":65}";
-      extractedPreset = { crtEmulation: 80, syncJitter: 45, chromaticAberration: 65 };
+      fallbackReply += "Local scanlines report an optimal retro calibration: **Tear** at 0.5 with **Chroma** at 0.45 for VHS distortion, **Scanlines** at 0.65 and **Bloom** at 0.4 for phosphor warmth.\n\nPRESET:{\"tearAmt\":0.5,\"chromaAmt\":0.45,\"noiseAmt\":0.3,\"scanlinesAmt\":0.65,\"bloomAmt\":0.4,\"feedbackAmt\":0.35}";
+      extractedPreset = { tearAmt: 0.5, chromaAmt: 0.45, noiseAmt: 0.3, scanlinesAmt: 0.65, bloomAmt: 0.4, feedbackAmt: 0.35 };
     } else if (activeModuleId === "blob_reveal") {
-      fallbackReply += "Local sensors suggest boosting **Reveal Threshold** to 70% and **Edge Feather** to 60% for a highly cinematic reveal matrix.\n\nPRESET:{\"revealThreshold\":70,\"maskInversion\":30,\"edgeFeather\":60}";
-      extractedPreset = { revealThreshold: 70, maskInversion: 30, edgeFeather: 60 };
+      fallbackReply += "Local sensors suggest a cinematic reveal matrix: **Seg Threshold** at 55 with **Feather** at 12 for soft rotoscope edges, and **Audio Expand** at 40 to make the mask pulse with the music.\n\nPRESET:{\"segThreshold\":55,\"feather\":12,\"opacity\":90,\"audioExpand\":40}";
+      extractedPreset = { segThreshold: 55, feather: 12, opacity: 90, audioExpand: 40 };
     } else if (activeModuleId === "bokeh") {
-      fallbackReply += "Local lens calculations recommend raising **Depth of Field** to 75% and **Bokeh Radius** to 65% for heavy background blur aesthetics.\n\nPRESET:{\"depthOfField\":75,\"bokehScale\":65,\"apertureShutter\":45}";
-      extractedPreset = { depthOfField: 75, bokehScale: 65, apertureShutter: 45 };
+      fallbackReply += "Local lens calculations recommend heavy background blur aesthetics: **Bokeh Radius** at 32 with **Bloom** at 1.8, plus a 1.6x **Anamorphic Squeeze** for cinematic ovals.\n\nPRESET:{\"bokehRadius\":32,\"bokehBloom\":1.8,\"bokehFeather\":0.55,\"anamSqueeze\":1.6}";
+      extractedPreset = { bokehRadius: 32, bokehBloom: 1.8, bokehFeather: 0.55, anamSqueeze: 1.6 };
     } else {
-      fallbackReply += "Anamorphic Lab local calculations suggest increasing **Streak Intensity** to 85% and **Flare Stretching** to 90% for majestic horizontal flares.\n\nPRESET:{\"streakIntensity\":85,\"flareStretching\":90,\"diffractionGrating\":40}";
-      extractedPreset = { streakIntensity: 85, flareStretching: 90, diffractionGrating: 40 };
+      fallbackReply += "Anamorphic Lab local calculations suggest majestic horizontal flares: **Flare Amount** at 0.85 with **Flare Length** at 0.9, plus **Halation** at 0.6 for film glow.\n\nPRESET:{\"flareMaster\":1,\"flareAmt\":0.85,\"flareLength\":0.9,\"halation\":0.6,\"squeeze\":1.6}";
+      extractedPreset = { flareMaster: 1, flareAmt: 0.85, flareLength: 0.9, halation: 0.6, squeeze: 1.6 };
     }
 
     res.json({
@@ -173,13 +173,13 @@ CURRENT PARAMETERS: ${JSON.stringify(parameters)}`;
     if (activeModule === "blob_tracker") {
       fallbackPreset = { threshold: 96, datamosh: 18, glitch: 12, connGlow: 65, fxOpacity: 100 };
     } else if (activeModule === "analog") {
-      fallbackPreset = { crtEmulation: 80, syncJitter: 45, chromaticAberration: 65 };
+      fallbackPreset = { tearAmt: 0.5, chromaAmt: 0.45, noiseAmt: 0.3, scanlinesAmt: 0.65, bloomAmt: 0.4, feedbackAmt: 0.35 };
     } else if (activeModule === "blob_reveal") {
-      fallbackPreset = { revealThreshold: 70, maskInversion: 30, edgeFeather: 60 };
+      fallbackPreset = { segThreshold: 55, feather: 12, opacity: 90, audioExpand: 40 };
     } else if (activeModule === "bokeh") {
-      fallbackPreset = { depthOfField: 75, bokehScale: 65, apertureShutter: 45 };
+      fallbackPreset = { bokehRadius: 32, bokehBloom: 1.8, bokehFeather: 0.55, anamSqueeze: 1.6 };
     } else {
-      fallbackPreset = { streakIntensity: 85, flareStretching: 90, diffractionGrating: 40 };
+      fallbackPreset = { flareMaster: 1, flareAmt: 0.85, flareLength: 0.9, halation: 0.6, squeeze: 1.6 };
     }
 
     res.json({ 

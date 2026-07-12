@@ -3170,6 +3170,103 @@ document.querySelector('.chip').classList.add('on');
     try { window.parent.postMessage({ type: type, payload: payload || {} }, '*'); } catch(e) {}
   }
 
+  // Sliders use ids s-<key> with inline oninput handlers (a dispatched
+  // 'input' event fires those too); toggles use tog-<key> buttons.
+  var SLIDERS = [
+    { key:'exposure',    id:'s-exposure',    label:'EXPOSURE',          group:'COLOR',      reactive:true,  hint:'Exposure in stops (-2 to +2)' },
+    { key:'temp',        id:'s-temp',        label:'TEMPERATURE',       group:'COLOR',      reactive:false, hint:'Color temperature, negative=cool positive=warm' },
+    { key:'lift',        id:'s-lift',        label:'LIFT',              group:'COLOR',      reactive:false, hint:'Black lift (film fade look)' },
+    { key:'contrast',    id:'s-contrast',    label:'CONTRAST',          group:'COLOR',      reactive:false, hint:'Filmic contrast amount' },
+    { key:'sat',         id:'s-sat',         label:'SATURATION',        group:'COLOR',      reactive:false, hint:'Color saturation (0-1.8)' },
+    { key:'rolloff',     id:'s-rolloff',     label:'HIGHLIGHT ROLLOFF', group:'COLOR',      reactive:false, hint:'Filmic highlight rolloff softness' },
+    { key:'lutMix',      id:'s-lutMix',      label:'LUT MIX',           group:'COLOR',      reactive:false, hint:'Film LUT blend amount' },
+    { key:'grain',       id:'s-grain',       label:'GRAIN',             group:'COLOR',      reactive:true,  hint:'Film grain amount' },
+    { key:'bokeh',       id:'s-bokeh',       label:'BOKEH BLUR',        group:'GLASS',      reactive:true,  hint:'Background bokeh blur amount' },
+    { key:'halation',    id:'s-halation',    label:'HALATION',          group:'GLASS',      reactive:true,  hint:'Warm glow around highlights (film halation)' },
+    { key:'ca',          id:'s-ca',          label:'CHROM ABERRATION',  group:'GLASS',      reactive:true,  hint:'Chromatic aberration at frame edges' },
+    { key:'bokehMM',     id:'s-bokehMM',     label:'FOCAL LENGTH MM',   group:'GLASS',      reactive:false, hint:'Lens focal length in mm driving bokeh size (0=off)' },
+    { key:'riccardoBlur',id:'s-riccardoBlur',label:'RICCARDO BLUR',     group:'GLASS',      reactive:true,  hint:'Custom directional blur amount' },
+    { key:'squeeze',     id:'s-squeeze',     label:'SQUEEZE',           group:'ANAMORPHIC', reactive:false, hint:'Anamorphic horizontal squeeze (1=off, 2=2x)' },
+    { key:'ratio',       id:'s-ratio',       label:'ASPECT RATIO',      group:'ANAMORPHIC', reactive:false, hint:'Target widescreen aspect ratio (1.78-2.80)' },
+    { key:'barrel',      id:'s-barrel',      label:'BARREL',            group:'ANAMORPHIC', reactive:false, hint:'Lens barrel distortion' },
+    { key:'vignette',    id:'s-vignette',    label:'VIGNETTE',          group:'ANAMORPHIC', reactive:false, hint:'Anamorphic oval vignette' },
+    { key:'flareAmt',    id:'s-flareAmt',    label:'FLARE AMOUNT',      group:'FLARE',      reactive:true,  hint:'Horizontal lens flare intensity' },
+    { key:'flareLength', id:'s-flareLength', label:'FLARE LENGTH',      group:'FLARE',      reactive:true,  hint:'Horizontal stretch of the flare streaks' },
+    { key:'flareColor',  id:'s-flareColor',  label:'FLARE COLOR',       group:'FLARE',      reactive:false, hint:'Flare hue (0=classic blue)' },
+    { key:'flareHeight', id:'s-flareHeight', label:'FLARE HEIGHT',      group:'FLARE',      reactive:false, hint:'Vertical thickness of the flare streaks' }
+  ];
+  var TOGGLES = [
+    { key:'letterbox',   id:'tog-letterbox',   label:'LETTERBOX',        group:'ANAMORPHIC', hint:'Crop to the target aspect ratio' },
+    { key:'breathing',   id:'tog-breathing',   label:'BREATHING',        group:'ANAMORPHIC', hint:'Subtle lens-breathing zoom oscillation' },
+    { key:'desqueeze',   id:'tog-desqueeze',   label:'DESQUEEZE',        group:'ANAMORPHIC', hint:'Desqueeze the anamorphic image for display' },
+    { key:'flare',       id:'tog-flare',       label:'FLARE AUTO DETECT',group:'FLARE',      hint:'Automatically spawn flares from bright points' },
+    { key:'flareMaster', id:'tog-flareMaster', label:'FLARE MASTER',     group:'FLARE',      hint:'Master switch of the flare engine' },
+    { key:'ghostGlitch', id:'tog-ghostGlitch', label:'GHOST GLITCH',     group:'GLASS',      hint:'Ghosting glitch artifacts' },
+    /* tog-riccardo is intentionally not exported: its state is derived from
+       bokehMM (>0 = on), which is already exposed as a number parameter */
+    { key:'compare',     id:'tog-compare',     label:'A/B COMPARE',      group:'VIEW',       hint:'Split before/after comparison view' }
+  ];
+
+  function num(v){ var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+  function buildSchema(){
+    var params = [];
+    SLIDERS.forEach(function(s){
+      var el = document.getElementById(s.id);
+      if (!el) return;
+      params.push({ key:s.key, label:s.label, type:'number',
+        min:num(el.min), max:num(el.max), step:num(el.step) || 1, value:num(el.value),
+        group:s.group, reactive:s.reactive, aiHint:s.hint || '' });
+    });
+    TOGGLES.forEach(function(t){
+      var el = document.getElementById(t.id);
+      if (!el) return;
+      params.push({ key:t.key, label:t.label, type:'boolean', value:el.classList.contains('on'),
+        group:t.group, reactive:false, aiHint:t.hint || '' });
+    });
+    return params;
+  }
+
+  function setParam(key, value){
+    var s = SLIDERS.find(function(x){ return x.key === key; });
+    if (s) {
+      var el = document.getElementById(s.id);
+      if (!el) return false;
+      var v = Number(value);
+      if (isNaN(v)) return false;
+      var mn = parseFloat(el.min), mx = parseFloat(el.max);
+      if (!isNaN(mn)) v = Math.max(mn, v);
+      if (!isNaN(mx)) v = Math.min(mx, v);
+      el.value = String(v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    var t = TOGGLES.find(function(x){ return x.key === key; });
+    if (t) {
+      var btn = document.getElementById(t.id);
+      if (!btn) return false;
+      var want = value === true || value === 1 || value === '1' || value === 'true';
+      if (btn.classList.contains('on') !== want) btn.click();
+      return true;
+    }
+    return false;
+  }
+
+  SLIDERS.forEach(function(s){
+    var el = document.getElementById(s.id);
+    if (el) el.addEventListener('input', function(){
+      post('syntech:param:changed', { key: s.key, value: num(el.value) });
+    });
+  });
+  TOGGLES.forEach(function(t){
+    var el = document.getElementById(t.id);
+    if (el) el.addEventListener('click', function(){
+      setTimeout(function(){
+        post('syntech:param:changed', { key: t.key, value: el.classList.contains('on') });
+      }, 0);
+    });
+  });
+
   function readFps(){
     var el = document.getElementById('fps-val');
     var n = el ? parseInt(el.textContent, 10) : 0;
@@ -3183,7 +3280,7 @@ document.querySelector('.chip').classList.add('on');
   }
 
   function announce(){
-    post('syntech:ready', { effectId: 'anamorphic_lab', version: '0.1.0', params: [] });
+    post('syntech:ready', { effectId: 'anamorphic_lab', version: '0.2.0', params: buildSchema() });
   }
   if (document.readyState === 'complete') announce();
   else window.addEventListener('load', announce);
@@ -3192,10 +3289,22 @@ document.querySelector('.chip').classList.add('on');
     post('syntech:state', { fps: readFps(), srcMode: readSrc(), recording: readRec() });
   }, 1000);
 
-  // Shell is about to tear the iframe down: release every live resource
   window.addEventListener('message', function(ev){
     var d = ev && ev.data;
-    if (!d || d.type !== 'syntech:close') return;
+    if (!d || !d.type) return;
+    if (d.type === 'syntech:param:set' && d.payload) {
+      setParam(d.payload.key, d.payload.value);
+      return;
+    }
+    if (d.type === 'syntech:preset:apply' && d.payload && d.payload.params) {
+      Object.keys(d.payload.params).forEach(function(k){
+        setParam(k, d.payload.params[k]);
+      });
+      return;
+    }
+    if (d.type !== 'syntech:close') return;
+
+    // Shell is about to tear the iframe down: release every live resource
     try { if (mediaRec && mediaRec.state === 'recording') mediaRec.stop(); } catch(e) {}
     try { stopAllSources(); } catch(e) {}
     try { stopNikonCamera(); } catch(e) {}
